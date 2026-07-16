@@ -593,15 +593,35 @@ NB (2026-07-16) : l'épinglage des collections (community.postgresql==3.14.3, co
   Toute mise à jour significative doit FINIR committée dans docs/aap-facts.md. FINI le mirroring `cp`
   entre racines de workspaceStorage — git fait foi et sert de backup distant récupérable.
 
-## RHEL — version requise : PAS DE VALEUR SOURCÉE (correctif checklist, 2026-07-16)
+## RHEL — version requise : RÉSOLU, sourcée dans le bundle (2026-07-16, suite)
+- Suite du point ci-dessous : version trouvée HORS LIGNE dans le bundle, pas besoin de fetch web.
+  Source EXACTE (collection ansible.containerized_installer, bundle 2.6-10.1-x86_64) :
+  * roles/preflight/tasks/nodes.yml:12-13 — assert installeur RÉEL exécuté sur chaque nœud :
+    `ansible_distribution == 'RedHat'` ET `ansible_distribution_version is version_compare('9.6', '>=')`,
+    fail_msg: "Only Red Hat Enterprise Linux 9.6+ distributions are supported".
+  * roles/preflight/tasks/core.yml:7 — assert ansible-core, fail_msg: "Supported combinations:
+    RHEL 9 with Ansible 2.14 or RHEL 10 with Ansible 2.16" => confirme RHEL 10 comme 2e combinaison
+    supportée (couplée à ansible-core 2.16 ; le garde-fou nodes.yml n'a PAS de borne haute, donc
+    10.x satisfait aussi mathématiquement version_compare('9.6','>=')).
+  => VALEUR RETENUE (la plus contraignante = celle réellement vérifiée par l'installeur) :
+     RHEL 9.6+ (ou RHEL 10, avec ansible-core 2.16). C'est un ASSERT RÉEL de l'installeur (pas une
+     doc externe) : plus fiable qu'une page web. Checklist .docx (section 4, les 2 variantes)
+     corrigée en conséquence, avec note interne (commentaire Word) citant fichier:ligne.
+- Reliquat noté en passant (PAS touché dans la checklist, hors périmètre de ce livrable) :
+  nodes.yml:16-19 contient aussi un assert RAM réel : `ansible_memtotal_mb >= 15000`, fail_msg
+  "Required RAM is 16GB..." => la valeur RAM 16 Go EST en fait sourçable dans le bundle (contrairement
+  à vCPU/IOPS, pour lesquels aucun assert n'existe : `ansible_processor_vcpus | default(4)` n'est
+  qu'un défaut de calcul de workers, PAS une exigence minimale ; IOPS n'apparaît nulle part dans les
+  rôles). À reprendre dans un livrable dédié si on veut sourcer RAM avec le même luxe que RHEL/disque.
+
+## RHEL — version requise : PAS DE VALEUR SOURCÉE (correctif checklist, 2026-07-16, PREMIÈRE tentative — voir suite ci-dessus)
 - La checklist .docx (docs/AAP_2.6_prerequis_infra_par_equipe.docx, section 4) affirmait
   « RHEL 9.4+ ». Grep de ce fichier (aap-facts.md) : AUCUNE version RHEL n'y est mentionnée —
-  la prémisse « c'est dans aap-facts.md, la vraie valeur est 9.6+ » était FAUSSE.
+  la prémisse « c'est dans aap-facts.md, la vraie valeur est 9.6+ » était FAUSSE À CE STADE.
 - Tentative de sourçage live (install-ref_cont_aap_system_requirements) : HTTP 403 (même mode
-  d'échec que le blocage JS déjà noté § STOCKAGE — SEUILS SOURCÉS). Version NI 9.4 NI 9.6 confirmée.
-- Décision (validée utilisateur) : reformuler la checklist en « version RHEL à confirmer côté
-  Red Hat », PAS d'affirmation de chiffre. # À VÉRIFIER : version RHEL exacte AAP 2.6 containerized
-  (page system requirements, à re-tenter avec un accès qui rend le JS, ou via doc PDF officielle).
+  d'échec que le blocage JS déjà noté § STOCKAGE — SEUILS SOURCÉS). Version NI 9.4 NI 9.6 confirmée
+  À CE STADE (résolu ensuite hors ligne dans le bundle, voir section précédente).
 - RAM 16 Go / vCPU 4 / IOPS ~3000 (mêmes docx) : déjà notés ci-dessus (§ STOCKAGE — SEUILS SOURCÉS,
   ligne « HORS périmètre stockage ») comme non sourcés avec la même rigueur que 60/15/10 Go — checklist
-  corrigée pour les présenter comme ordre de grandeur à confirmer, pas comme exigence ferme.
+  corrigée pour les présenter comme ordre de grandeur à confirmer, pas comme exigence ferme (INCHANGÉ,
+  cf. nuance RAM ci-dessus).
