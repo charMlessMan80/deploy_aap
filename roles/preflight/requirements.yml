@@ -9,18 +9,31 @@
 # Installation (depuis le bundle en priorité, cf. ansible.cfg collections_path) :
 #   ansible-galaxy collection install -r roles/preflight/requirements.yml -p ./collections
 #
-# NB : community.general est ABSENT du bundle — ne PAS l'utiliser dans ce rôle.
-# Collections vendorées utilisables : ansible.posix, community.crypto,
-# community.postgresql, containers.podman.
+# NB : community.general est ABSENT du bundle (à fournir via Galaxy/Automation Hub).
+# Elle EST néanmoins utilisée par la brique 2 (register Satellite) faute d'équivalent
+# vendoré => épinglée strictement ci-dessous. Collections VENDORÉES du bundle :
+# ansible.posix, community.crypto, community.postgresql, containers.podman.
+#
+# PRINCIPE D'ÉPINGLAGE : la référence est la version VENDORÉE DANS LE BUNDLE (plateforme
+# testée par Red Hat), PAS la dernière de Galaxy ni ce qui traîne en dev. Épinglage STRICT
+# (==) pour que dev et seed résolvent la même version. Seules les collections RÉELLEMENT
+# utilisées par le rôle sont épinglées (community.postgresql, community.general).
 
 collections:
+  # community.postgresql.postgresql_ping (brique 1b). VENDORÉE dans le bundle AAP 2.6.
+  # Source : bundles/.../collections/ansible_collections/community/postgresql/MANIFEST.json => 3.14.3
   - name: community.postgresql
-    # version: ""   # À VÉRIFIER : épingler la version alignée sur le bundle
-    #               #   (bundle : community.postgresql-3.14.3) si découplage de Galaxy.
+    version: "==3.14.3"
 
-  # Brique 2 (enregistrement Satellite) : redhat_subscription + rhsm_repository.
-  # ABSENTE du bundle AAP (contrairement à community.postgresql), mais PUBLIÉE sur
-  # Galaxy — à fournir aux nœuds seed (Galaxy public OU Automation Hub interne).
-  # À VÉRIFIER (infra) : disponibilité réelle sur le seed (accès Galaxy vs Hub interne).
+  # Brique 2 (enregistrement Satellite) : community.general.redhat_subscription + rhsm_repository.
+  # NON vendorée dans le bundle (vérifié) => NE PEUT PAS s'aligner sur le bundle ; contrainte
+  # décidée séparément = version VALIDÉE en dev (ansible-galaxy collection list => 6.6.2),
+  # épinglée STRICTEMENT pour reproductibilité.
+  # CRITIQUE : le backend de redhat_subscription dépend de la MAJEURE de community.general
+  # (D-Bus vs subscription-manager selon la majeure) ; un upgrade de majeure NON testé est à
+  # PROSCRIRE (changerait le comportement d'enregistrement Satellite).
+  # À VÉRIFIER (infra) : disponibilité de 6.6.2 sur le seed (Galaxy public OU Automation Hub
+  #   interne). Si le Hub interne n'offre pas 6.6.2, repli = pin borné majeure '>=6.0.0,<7.0.0'
+  #   à trancher avec l'infra (conserve la garde anti-majeure).
   - name: community.general
-    # version: ""   # À VÉRIFIER : version à épingler selon la source retenue
+    version: "==6.6.2"
