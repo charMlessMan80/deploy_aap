@@ -8,10 +8,14 @@
 # PÉRIMÈTRE (résolu, sourcé) : l'installeur ne fait AUCUN contrôle d'espace/mount =>
 # tout le contrôle nous revient. Le SEUL assert dur SANS chiffre = « graphroot Podman
 # pas sur NFS » (graphroot = {{ aap_user_home }}/aap/containers/storage, sourcé :
-# roles/common/templates/storage.conf.j2, rootless_storage_path). Les seuils d'espace /
-# FS sont PARAMÉTRABLES, défaut NON IMPOSÉ (aucun chiffre officiel n'a pu être sourcé —
-# doc RH « system requirements » non extractible, PDF 404). IOPS / layout LVM / taille
-# disque = provisioning, NON assertables => documentés, pas testés ici.
+# roles/common/templates/storage.conf.j2, rootless_storage_path ; confirmé doc RH :
+# « Podman does not support storing container images on an NFS share »). Les seuils
+# d'espace sont désormais SOURCÉS (table « Local disk » per-VM, AAP 2.6 containerized) :
+#   Installation directory 15 GB ($HOME/aap) et TMPDIR /tmp 10 GB (bundle/offline) —
+#   voir defaults/main.yml pour les URL. Restent PARAMÉTRABLES (surchargeables env/groupe).
+#   Le type de FS n'est PAS imposé par la doc (aucune exigence ni reco) => défaut vide.
+# IOPS / layout LVM / taille disque totale (60 GB) = provisioning, NON assertables =>
+#   documentés, pas testés ici.
 #
 # Recherche du bon montage : plus long préfixe parmi ansible_mounts (le chemin n'est PAS
 # forcément un point de montage — souvent porté par /home ou /). Tri croissant + écrasement

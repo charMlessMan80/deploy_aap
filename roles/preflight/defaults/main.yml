@@ -60,14 +60,35 @@ preflight_firewalld_required_state: ""
 # Brique 8 — stockage (asserts sur ansible_mounts ; AUCUNE opération de disque).
 # Chemins sondés (techniques du rôle) :
 preflight_graphroot_path: "{{ aap_user_home }}/aap/containers/storage"  # sourcé storage.conf.j2
-preflight_bundle_tmp_path: /tmp        # images_tmp_dir défaut = TMPDIR (README L53) ; À VÉRIFIER
-# Garde cœur sourcée (overlay pas sur NFS) — toujours active :
+# images_tmp_dir défaut = TMPDIR système = /tmp (bundle README, section Common ;
+# confirmé doc RH « Temporary directory (defaults to /tmp) »).
+preflight_bundle_tmp_path: /tmp
+# Garde cœur sourcée (overlay pas sur NFS) — toujours active. Confirmée doc RH :
+# « Podman does not support storing container images on an NFS share »
+#   (System requirements, containerized ; cf. URL ci-dessous).
 preflight_graphroot_forbid_nfs: true
-# Seuils PARAMÉTRABLES, défaut NON IMPOSÉ (aucun chiffre officiel sourçable ; À VÉRIFIER
-# doc RH). 0 = skip. Surchargeables par env ET par groupe (ex. hub >> autres, §5.7).
-preflight_aap_min_free_gb: 0           # $HOME/aap ; À VÉRIFIER
-preflight_bundle_tmp_min_free_gb: 0    # TMPDIR extraction bundle ; À VÉRIFIER
-preflight_storage_required_fstype: ""  # ex 'xfs' ; À VÉRIFIER strict vs reco
+#
+# Seuils SOURCÉS (AAP 2.6 containerized, table « Local disk » per-VM — IDENTIQUE sur
+# les deux pages officielles, une SEULE table pour TOUS les nœuds de la topo enterprise ;
+# aucune différenciation par rôle publiée) :
+#   - Container enterprise topology :
+#     https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/plan-ref_cont_b_env_a
+#   - Containerized System requirements :
+#     https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.6/install-ref_cont_aap_system_requirements
+# Table (per-VM) : Total 60 GB · Installation directory 15 GB · /var/tmp online 1 GB ·
+#   /var/tmp offline/bundled 3 GB · TMPDIR (/tmp) offline/bundled 10 GB.
+# Contexte projet = installation BUNDLE (offline) => on retient les valeurs bundled.
+# Surchargeables par env ET par groupe (§5.7) si un besoin local supérieur est décidé.
+preflight_aap_min_free_gb: 15          # « Installation directory: 15 GB » -> $HOME/aap
+preflight_bundle_tmp_min_free_gb: 10   # « Temporary directory (/tmp) offline/bundled: 10 GB »
+# NB /var/tmp (3 GB bundled) : exigence distincte NON modélisée ici (pas de variable
+#   dédiée — périmètre figé) ; à couvrir par le provisioning du disque (Total 60 GB).
+# NB hub : le surplus de stockage du hub porte sur le PARTAGE NFS de contenu (concern
+#   séparé), pas sur le disque local d'installation => pas de défaut par groupe ici.
+# FS : la doc RH ne pose AUCUNE exigence NI recommandation de type de FS (ni xfs ni ext4)
+#   pour le disque local => on n'impose rien. Passer 'xfs' en group_vars si l'organisation
+#   l'exige (l'assert ne mord que si la variable est non vide).
+preflight_storage_required_fstype: ""
 
 # Brique 6 — prérequis NFS du hub (test d'atteignabilité ; PAS de montage).
 preflight_nfs_port: 2049
