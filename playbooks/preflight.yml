@@ -1,0 +1,29 @@
+---
+# playbooks/preflight.yml — Préparation des VM cibles.
+#
+# Portée (cf. CLAUDE.md 4) : enregistrement Satellite, repos, paquets
+# (ansible-core, podman, ...), utilisateur `aap` + linger, partitionnement,
+# chrony, firewalld, SELinux, dépôt des certificats PKI, montage du partage du
+# hub, test de connectivité PostgreSQL en TLS.
+#
+# STUB — livrable 1. Le détail des tâches viendra après validation.
+#
+# RAPPEL CLAUDE.md 5.2 — Verrouillage des variables de banc de test :
+# l'assertion de blocage des variables test-harness en production DEVRA être
+# placée ICI, en tête de play, AVANT toute évaluation qui en dépend.
+
+- name: Preflight — préparation de toutes les cibles AAP
+  hosts: all                        # À VÉRIFIER : périmètre exact des groupes ciblés
+  become: true
+  gather_facts: true
+  # Orchestration (cf. site.yml, Q1) : un SEUL nœud qui échoue ses gardes doit
+  # arrêter TOUTE la chaîne AVANT l'installeur (sinon on muterait des nœuds sains
+  # alors qu'un nœud est non conforme). Mot-clé d'orchestration, pas de logique.
+  any_errors_fatal: true
+
+  # pre_tasks:
+  #   - name: Bloquer les variables de banc de test hors qualification
+  #     ansible.builtin.assert: ...  # cf. CLAUDE.md 5.2 (à implémenter, livrable dédié)
+
+  roles:
+    - role: preflight

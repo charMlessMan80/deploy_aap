@@ -1,0 +1,35 @@
+---
+# roles/postcheck/tasks/systemd_status.yml — Sonde LECTURE SEULE du statut des
+# conteneurs systemd --user (rootless, utilisateur applicatif).
+#
+# Entrées attendues (passées via `vars:` par l'appelant) :
+#   - postcheck_services  : liste de services (.service) à vérifier.
+#   - postcheck_component : libellé du composant (affichage).
+#
+# LECTURE SEULE : le module systemd SANS `state` ne fait que collecter le statut
+# (aucune mutation) ; `changed_when: false` verrouille l'idempotence. SOURCÉ : les
+# services sont gérés par l'installateur en `scope: user` (rootless). S'exécute sur
+# le seed après install — non exécutable/simulable en dev.
+
+- name: "Collecter le statut des conteneurs systemd (lecture seule) — {{ postcheck_component }}"
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    scope: "{{ postcheck_systemd_scope }}"
+  become: true
+  become_user: "{{ aap_user }}"
+  environment:
+    XDG_RUNTIME_DIR: "{{ postcheck_xdg_runtime_dir }}"
+  loop: "{{ postcheck_services }}"
+  register: _postcheck_systemd
+  changed_when: false
+
+- name: "Vérifier que les conteneurs systemd sont actifs — {{ postcheck_component }}"
+  ansible.builtin.assert:
+    that:
+      - item.status.ActiveState | default('') == 'active'
+    fail_msg: "Service {{ item.item }} non actif (ActiveState={{ item.status.ActiveState | default('inconnu') }})."
+    success_msg: "Service {{ item.item }} actif."
+    quiet: true
+  loop: "{{ _postcheck_systemd.results }}"
+  loop_control:
+    label: "{{ item.item }}"

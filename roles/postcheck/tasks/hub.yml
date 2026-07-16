@@ -1,0 +1,35 @@
+---
+# roles/postcheck/tasks/hub.yml — Post-checks du hub (gaté automationhub).
+# LECTURE SEULE. S'exécute sur le seed après install (non simulable en dev).
+
+- name: Postcheck hub — statut des conteneurs systemd
+  ansible.builtin.include_tasks: systemd_status.yml
+  vars:
+    postcheck_component: hub
+    postcheck_services: "{{ postcheck_hub_services }}"
+
+- name: Postcheck hub — point d'entrée plateforme requis pour la sonde hub
+  ansible.builtin.assert:
+    that:
+      - postcheck_gateway_proxy_url | length > 0
+    fail_msg: >-
+      postcheck_gateway_proxy_url (URL du point d'entrée plateforme / VIP) doit être
+      défini pour vérifier le hub via le proxy.
+    quiet: true
+  run_once: true
+
+# SOURCÉ : automationhub/tasks/upload_collections.yml (uri /pulp/api/v3/status/, status 200).
+# Vérifié VIA le point d'entrée plateforme (proxy), comme l'installateur.
+- name: Postcheck hub — endpoint de statut pulp (/pulp/api/v3/status/)
+  ansible.builtin.uri:
+    url: "{{ postcheck_hub_health_url }}"
+    validate_certs: "{{ postcheck_validate_certs }}"
+    ca_path: "{{ postcheck_ca_path | default(omit, true) }}"
+    timeout: "{{ postcheck_http_timeout }}"
+    status_code: 200
+  register: _postcheck_hub_http
+  until: _postcheck_hub_http.status == 200
+  retries: "{{ postcheck_http_retries }}"
+  delay: "{{ postcheck_http_delay }}"
+  changed_when: false
+  run_once: true

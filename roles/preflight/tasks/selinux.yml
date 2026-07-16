@@ -1,0 +1,59 @@
+---
+# roles/preflight/tasks/selinux.yml — Brique 5 : SELinux (ASSERT d'état, minimal).
+#
+# PÉRIMÈTRE (résolu, sourcé) : l'installeur gère lui-même le SELinux substantiel —
+# contexte du stockage Podman (setype data_home_t, common/tasks/executionplane.yml:6),
+# relabels :z/:Z des bind-mounts, security_opt label=disable
+# (automationcontroller/tasks/containers.yml:43), volumes :U, montage NFS du hub +
+# bind non-labellisé (automationhub/tasks/nfs.yml, facts.yml:34). Il ne fait AUCUN
+# precheck d'état SELinux et ne pose AUCUN booléen. Cette brique se limite donc à
+# VÉRIFIER l'état (lecture seule via le fait ansible_selinux) — elle NE repose RIEN
+# de ce que l'installeur pose (anti sur-couverture, cf. piège python3-cryptography).
+#
+# ÉTAT EXIGÉ : la doc AAP 2.6 containerized consultée ne fonde pas explicitement
+# 'enforcing' (# À VÉRIFIER : doc / support RH). On impose donc le MINIMAL défendable :
+# SELinux ACTIVÉ (status == 'enabled') — les confinements de l'installeur (:z/:Z,
+# data_home_t, label=disable) n'ont de sens que SELinux actif ; 'disabled' les rendrait
+# inertes. L'exigence 'enforcing' stricte est PARAMÉTRABLE
+# (preflight_selinux_required_mode), NON imposée en dur.
+#
+# BINDINGS : le fait ansible_selinux (comme le setype de l'installeur) nécessite
+# python3-libselinux (+ policycoreutils). Ils sont STANDARD sur RHEL 9.6+/10 (SELinux
+# est core) => non ajoutés à preflight_packages (et non installables ici, avant le
+# register). S'ils manquaient, le fait renvoie status='Missing selinux Python bindings'
+# et l'assert ci-dessous le signale avec la remédiation. # À VÉRIFIER : profil « minimal ».
+#
+# FRONTIÈRE DEV : lit ansible_selinux (dispo via gather_facts). L'assert est
+# démontrable en dev, MAIS l'état de la machine de dev n'est PAS celui de la cible.
+
+- name: Vérifier que SELinux est activé (non 'disabled', bindings présents)
+  ansible.builtin.assert:
+    that:
+      - ansible_selinux is defined
+      - (ansible_selinux.status | default('')) == 'enabled'
+    fail_msg: >-
+      SELinux n'est pas activé sur {{ inventory_hostname }}
+      (ansible_selinux.status = '{{ ansible_selinux.status | default("indéfini") }}').
+      Attendu : 'enabled'. Si le statut est 'Missing selinux Python bindings',
+      installer python3-libselinux + policycoreutils ; sinon activer SELinux
+      (les confinements Podman de l'installeur en dépendent).
+    success_msg: >-
+      SELinux activé (status=enabled, mode={{ ansible_selinux.mode | default('?') }},
+      type={{ ansible_selinux.type | default('?') }}).
+    quiet: true
+  tags:
+    - preflight_selinux_guard
+
+- name: Vérifier le mode SELinux exigé (optionnel — ex. 'enforcing' si mandaté)
+  ansible.builtin.assert:
+    that:
+      - (ansible_selinux.mode | default('')) == preflight_selinux_required_mode
+    fail_msg: >-
+      Mode SELinux '{{ ansible_selinux.mode | default("indéfini") }}' sur
+      {{ inventory_hostname }} ; mode exigé '{{ preflight_selinux_required_mode }}'
+      (preflight_selinux_required_mode).
+    success_msg: "Mode SELinux conforme : '{{ ansible_selinux.mode | default('?') }}'."
+    quiet: true
+  when: (preflight_selinux_required_mode | default('')) | length > 0
+  tags:
+    - preflight_selinux_guard

@@ -1,0 +1,23 @@
+---
+# playbooks/install.yml — Invocation de l'installeur officiel.
+#
+# CLAUDE.md 1 & 3 : l'installation est DÉLÉGUÉE à la collection
+# `ansible.containerized_installer`. Ce dépôt ne réimplémente pas l'installeur ;
+# il l'orchestre.
+#
+# FQCN CONFIRMÉ : ansible.containerized_installer.install est bien le playbook
+# d'installation documenté pour AAP 2.6 containerized.
+#
+# PRÉ-REQUIS de résolution : ce FQCN ne se résout QUE si le setup bundle AAP 2.6
+# est extrait et que collections_path pointe sur son répertoire `collections/`
+# (cf. ansible.cfg et requirements.yml). Sans bundle, le --syntax-check de ce
+# play échouera — c'est attendu en dev hors infra (CLAUDE.md 2).
+
+# Verrou d'environnement AVANT l'installeur : protège la prod (banc de test
+# interdit, verify-full exigé, couplage custom_ca_cert). L'ordre des import_playbook
+# garantit que l'assert précède toute consommation de variable par l'installeur.
+- name: Verrouillage d'environnement (protège la prod) — avant l'installeur
+  ansible.builtin.import_playbook: assert_env_lock.yml
+
+- name: Install AAP 2.6 containerized (installeur officiel)
+  ansible.builtin.import_playbook: ansible.containerized_installer.install

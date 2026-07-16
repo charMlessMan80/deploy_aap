@@ -1,0 +1,49 @@
+---
+# roles/preflight/tasks/packages_user.yml — Brique 3 : paquets + user aap + linger.
+#
+# ORDRE : APRÈS l'enregistrement Satellite (repos actifs, brique 2) et AVANT le ping
+# PostgreSQL de la brique 1b (qui exige python3-psycopg2 sur les nœuds).
+#
+# LINGER — forme confirmée contre l'installeur (roles/common/tasks/main.yml L110-113) :
+# AUCUN module ne gère le linger (vérifié : ni ansible.builtin.user ni
+# community.general.systemd_service n'exposent d'option linger). L'installeur
+# lui-même utilise `command: loginctl enable-linger <user>` rendu IDEMPOTENT par
+# `creates:` sur le marqueur /var/lib/systemd/linger/<user>. On reproduit ce motif :
+# pas de module -> command idempotent justifié.
+#
+# FRONTIÈRE DEV : l'installation de paquets (repos Satellite injoignables) et le
+# enable-linger (root + vrai hôte) NE sont PAS exécutables en dev. En dev :
+# --syntax-check / ansible-lint uniquement. Rien n'est simulé.
+
+- name: Installer les paquets prérequis (depuis les repos Satellite)
+  # state: present (PAS latest) : la version est pilotée par les repos Satellite,
+  # pas par un upgrade opportuniste.
+  ansible.builtin.package:
+    name: "{{ preflight_packages }}"
+    state: present
+  become: true
+
+- name: Créer le groupe de l'utilisateur aap
+  ansible.builtin.group:
+    name: "{{ aap_group }}"
+    state: present
+  become: true
+
+- name: Créer l'utilisateur aap (Podman rootless)
+  ansible.builtin.user:
+    name: "{{ aap_user }}"
+    group: "{{ aap_group }}"
+    home: "{{ aap_user_home }}"
+    shell: "{{ aap_user_shell }}"
+    create_home: true
+    state: present
+  become: true
+
+- name: Activer le linger pour l'utilisateur aap (services user persistants)
+  # Pas de module pour le linger -> command idempotent justifié. Motif de
+  # l'installeur (common/tasks/main.yml L110-113) : creates sur le marqueur linger,
+  # donc aucun 'changed' au second passage.
+  ansible.builtin.command:
+    cmd: "loginctl enable-linger {{ aap_user }}"
+    creates: "/var/lib/systemd/linger/{{ aap_user }}"
+  become: true

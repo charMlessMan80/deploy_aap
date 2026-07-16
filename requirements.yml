@@ -1,0 +1,33 @@
+---
+# Résolution des collections — IMPORTANT (confirmé) :
+#
+# La collection `ansible.containerized_installer` N'EST PAS publiée sur
+# galaxy.ansible.com. Elle est livrée À L'INTÉRIEUR du setup bundle AAP 2.6
+# containerized (répertoire extrait du tarball). Un
+#   ansible-galaxy collection install ansible.containerized_installer
+# contre Galaxy public ÉCHOUERA.
+#
+# Mécanisme correct :
+#   1. Récupérer le setup bundle AAP 2.6 containerized (via Satellite / portail RH).
+#   2. L'extraire sur les nœuds seed ET sur la machine de dev (validation hors ligne).
+#   3. Pointer collections_path sur le répertoire `collections/` du bundle extrait
+#      (voir ansible.cfg) — ou installer depuis ce chemin LOCAL :
+#        ansible-galaxy collection install \
+#          /chemin/bundle-extrait/collections/<archive|dir> -p ./collections
+#      # À VÉRIFIER : nom exact du répertoire/artefact de la collection dans le
+#      #   bundle AAP 2.6 (dépend de la version). À lire dans le bundle extrait.
+#
+# Conséquence dev hors infra (CLAUDE.md 2) : sans bundle extrait localement,
+# aucun `--syntax-check` sérieux du play `install` n'est possible (le FQCN
+# ansible.containerized_installer.install ne se résout pas).
+#
+# => On ne liste donc PAS l'installeur ici (Galaxy ne peut pas le résoudre).
+# Réservé aux éventuelles collections utilitaires réellement publiées sur Galaxy.
+
+collections: []
+  # Constat : les besoins de collection du PREFLIGHT sont déclarés dans
+  #   roles/preflight/requirements.yml (community.postgresql — vendorée dans le
+  #   bundle ; community.general — ABSENTE du bundle, à fournir via Galaxy/Hub).
+  #   Rien à lister ici : l'installeur n'est pas résoluble via Galaxy (cf. en-tête).
+
+roles: []

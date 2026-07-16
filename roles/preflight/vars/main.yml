@@ -1,0 +1,16 @@
+---
+# roles/preflight/vars/main.yml — Variables internes du rôle preflight.
+# Précédence supérieure aux defaults ; constantes internes non destinées à être
+# surchargées par l'inventaire.
+
+# Services AAP à base externe testés par la brique 1b. Chaque service est testé
+# depuis les nœuds de son groupe. Noms de groupes = ceux confirmés contre le bundle.
+preflight_pg_services:
+  - name: gateway
+    group: automationgateway
+  - name: controller
+    group: automationcontroller
+  - name: hub
+    group: automationhub
+  - name: eda
+    group: automationeda

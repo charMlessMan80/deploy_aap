@@ -1,0 +1,123 @@
+---
+# roles/preflight/tasks/main.yml — Point d'entrée du rôle preflight.
+#
+# Portée (CLAUDE.md 4). Chaque étape est isolée dans son propre fichier, importé
+# ici. STUB — livrable 1 : imports commentés, contenu à écrire aux livrables
+# suivants (un livrable à la fois, cf. CLAUDE.md 6).
+#
+# RAPPEL CLAUDE.md 5.5 : idempotence exigée, changed_when/failed_when explicites,
+# pas de command/shell là où un module existe.
+#
+# ORDRE (revu — revue de cohérence) : les gardes d'ÉTAT lecture seule (SELinux,
+# firewalld, stockage) passent EN PREMIER pour échouer vite AVANT toute mutation ;
+# puis chrony (1re mutation : conf horloge) AVANT le register (TLS) ; puis
+# register -> paquets -> CA PKI -> ping PG -> prérequis NFS hub.
+
+# --- Brique 5 — SELinux : assert d'état (lecture seule) -----------------------
+# Garde d'ÉTAT pure (aucune dépendance repo), EN PREMIER : échouer vite si SELinux
+# est désactivé, AVANT toute mutation. Ne repose RIEN (l'installeur gère
+# contextes/relabels/booléens/NFS lui-même).
+- name: État SELinux (assert) — garde d'état, avant toute mutation
+  ansible.builtin.import_tasks: selinux.yml
+  tags:
+    - preflight
+    - preflight_selinux
+
+# --- Brique 7 — firewalld : assert d'état (lecture seule) ----------------------
+# Miroir de la brique 5 (SELinux) : garde d'ÉTAT pure (aucune dépendance repo),
+# regroupée avec les autres gardes, AVANT toute mutation/register. NE ROUVRE AUCUN
+# PORT (l'installeur ouvre tout lui-même, mais uniquement si firewalld est enabled).
+- name: État firewalld (assert) — garde d'état, avant register
+  ansible.builtin.import_tasks: firewalld.yml
+  tags:
+    - preflight
+    - preflight_firewalld
+
+# --- Brique 8 — stockage : asserts sur ansible_mounts (AUCUNE opération disque) --
+# Garde d'état pure (aucune dépendance repo), regroupée avec les autres gardes.
+# VERROU : ne partitionne / formate / monte / crée RIEN — asserts lecture seule.
+- name: Stockage (asserts ansible_mounts) — garde d'état, avant register
+  ansible.builtin.import_tasks: storage.yml
+  tags:
+    - preflight
+    - preflight_storage
+
+# --- Brique 4 — synchronisation horaire (chrony) ----------------------------
+# APRÈS les gardes lecture seule (fail-fast) et AVANT le register : register,
+# verify-full PG et la confiance TLS échouent si l'horloge dérive. chrony ne peut PAS
+# être installé avant le register (hôte non enregistré => aucun repo) : il doit être
+# PRÉSENT dans l'image RHEL (garde de présence dans chrony.yml). Source :
+# Satellite 6.19 §6.2.2.
+- name: Synchronisation horaire (chrony) — avant le register (TLS)
+  ansible.builtin.import_tasks: chrony.yml
+  tags:
+    - preflight
+    - preflight_chrony
+
+# --- Brique 2 — enregistrement Satellite : CA + register + repos -------------
+# Juste APRÈS la synchro horaire : register est TLS. L'installeur ET les briques
+# suivantes (paquets, ping PG qui exige python3-psycopg2) supposent l'hôte déjà
+# enregistré avec repos actifs.
+- name: Enregistrement Satellite (CA d'abord, puis register, puis repos)
+  ansible.builtin.import_tasks: satellite_register.yml
+  tags:
+    - preflight
+    - preflight_satellite
+
+# - name: Enregistrement + abonnement Satellite (aucun content view/AK préexistant)
+#   ansible.builtin.import_tasks: satellite_register.yml
+
+# - name: Activation des repos requis via Satellite
+#   ansible.builtin.import_tasks: repos.yml
+
+# --- Brique 3 — paquets + utilisateur aap + linger --------------------------
+# APRÈS l'enregistrement (repos actifs) et AVANT le ping PG (brique 1b) qui exige
+# python3-psycopg2 sur les nœuds.
+- name: Paquets prérequis + utilisateur aap + linger
+  ansible.builtin.import_tasks: packages_user.yml
+  tags:
+    - preflight
+    - preflight_packages
+
+# - name: Utilisateur `aap` rootless + linger
+#   ansible.builtin.import_tasks: user_aap.yml
+
+# - name: Partitionnement
+#   ansible.builtin.import_tasks: partitioning.yml
+
+# - name: Synchronisation horaire (chrony)
+#   ansible.builtin.import_tasks: chrony.yml
+
+# - name: Pare-feu (firewalld)
+#   ansible.builtin.import_tasks: firewalld.yml
+
+# - name: SELinux
+#   ansible.builtin.import_tasks: selinux.yml
+
+# --- Brique 1a — dépôt / présence du PEM de CA (custom_ca_cert) ---------------
+- name: Dépôt et vérification de présence du PEM de CA d'entreprise
+  ansible.builtin.import_tasks: pki_ca.yml
+  tags:
+    - preflight
+    - preflight_ca
+
+# - name: Montage du partage du hub
+#   ansible.builtin.import_tasks: hub_mount.yml
+
+# --- Brique 1b — connectivité PostgreSQL TLS, par service --------------------
+- name: Test de connectivité PostgreSQL en TLS (par service)
+  ansible.builtin.import_tasks: postgres_connectivity.yml
+  tags:
+    - preflight
+    - preflight_pg
+
+# --- Brique 6 — prérequis du partage NFS du hub (PAS le montage) -------------
+# Gatée aux nœuds automationhub. L'installeur MONTE le partage et installe nfs-utils
+# lui-même : ici, cohérence des variables + atteignabilité réseau seulement. Pas de
+# dépendance repo (wait_for = module TCP), placée avec les checks de connectivité.
+- name: Prérequis du partage NFS du hub (cohérence vars + atteignabilité)
+  ansible.builtin.import_tasks: hub_nfs_prereq.yml
+  when: inventory_hostname in groups.get('automationhub', [])
+  tags:
+    - preflight
+    - preflight_hub_nfs

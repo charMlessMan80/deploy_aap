@@ -1,0 +1,58 @@
+---
+# site.yml — Orchestrateur global de bout en bout.
+# Enchaîne : preflight (préparation VM) -> install (verrou prod + installeur
+# officiel) -> postcheck (vérifications lecture seule).
+#
+# ===========================================================================
+# COMPORTEMENT D'ORCHESTRATION (décisions actées — cf. livrable d'assemblage)
+# ===========================================================================
+# Q1. ARRÊT AU PREMIER ÉCHEC (invariant dur).
+#   Les import_playbook s'exécutent en séquence : l'échec d'une phase stoppe les
+#   suivantes. De plus, chaque play d'orchestration (preflight, verrou, postcheck)
+#   porte `any_errors_fatal: true` : l'échec d'UN SEUL nœud arrête TOUTE la chaîne
+#   AVANT l'installeur. On ne mute jamais des nœuds sains si un nœud a échoué ses
+#   gardes preflight. (L'installeur Red Hat n'est PAS modifié : le verrou preflight
+#   en amont suffit à garantir une porte propre avant install.)
+#
+# Q2. HÉRITAGE DU VERROU DE PROD (non-contournement).
+#   site.yml importe playbooks/install.yml — JAMAIS l'installeur directement.
+#   install.yml importe assert_env_lock.yml AVANT ansible.containerized_installer.install.
+#   Donc TOUT chemin via site.yml passe par le verrou (test_harness_* interdit en
+#   prod, verify-full exigé, custom_ca_cert requis) AVANT toute mutation d'install.
+#   Réimporter l'installeur en direct ici créerait une porte dérobée : INTERDIT.
+#
+# Q3. EXÉCUTION PAR PHASE (tags).
+#   Chaque phase porte un tag propagé à tout son contenu :
+#     --tags preflight   -> preflight seul
+#     --tags install     -> verrou + installeur (le verrou reste inclus)
+#     --tags postcheck   -> postcheck seul (rejouable sans re-preflight)
+#   Les phases se cumulent : --tags "preflight,postcheck", etc.
+#
+# ===========================================================================
+# USAGE
+# ===========================================================================
+# L'inventaire N'EST PAS codé en dur : il DOIT être passé en -i pour éviter tout
+# mélange prod/qual (cf. CLAUDE.md 5.1). Fonctionne à l'identique prod ET qual.
+#   Tout de bout en bout :
+#     ansible-playbook -i inventories/prod/hosts.yml site.yml
+#     ansible-playbook -i inventories/qual/hosts.yml site.yml
+#   Une phase seule (via tags) :
+#     ansible-playbook -i inventories/prod/hosts.yml site.yml --tags preflight
+#     ansible-playbook -i inventories/prod/hosts.yml site.yml --tags postcheck
+#   Ou directement le playbook de phase :
+#     ansible-playbook -i inventories/prod/hosts.yml playbooks/postcheck.yml
+
+- name: Preflight — préparation des VM cibles
+  ansible.builtin.import_playbook: playbooks/preflight.yml
+  tags:
+    - preflight
+
+- name: Install — verrou de prod puis installeur officiel AAP 2.6 containerized
+  ansible.builtin.import_playbook: playbooks/install.yml
+  tags:
+    - install
+
+- name: Postcheck — vérifications post-installation
+  ansible.builtin.import_playbook: playbooks/postcheck.yml
+  tags:
+    - postcheck

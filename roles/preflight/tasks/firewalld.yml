@@ -1,0 +1,46 @@
+---
+# roles/preflight/tasks/firewalld.yml — Brique 7 : firewalld (ASSERT d'état, minimal).
+#
+# PÉRIMÈTRE (résolu, sourcé) : l'installeur ouvre TOUS les ports composants lui-même
+# (ansible.posix.firewalld dans chaque <comp>/tasks/firewalld.yml, sur les bons nœuds,
+# zones paramétrables), MAIS seulement SI firewalld.service est 'enabled'. Il ne fait
+# AUCUN precheck. Cette brique NE ROUVRE AUCUN PORT (sur-couverture + surface d'attaque
+# si on ouvrait du loopback) : c'est un ASSERT D'ÉTAT, miroir strict de la brique 5.
+#
+# VALEUR : l'installeur n'ouvre les ports QUE si firewalld est enabled ; si firewalld
+# est disabled, il passe ses règles EN SILENCE (hôte sans firewall, sans avertissement).
+# L'assert rend cette intention explicite et attrape cet échec silencieux.
+#
+# ÉTAT LU via ansible.builtin.service_facts (MODULE, pas de command) — même source que
+# la condition de l'installeur (ansible_facts.services['firewalld.service'].status).
+#
+# DÉCISION D'ÉTAT : l'installeur n'EXIGE pas firewalld enabled (il gère les deux cas).
+# On n'impose donc RIEN en dur : preflight_firewalld_required_state défaut "" (non
+# imposé, cohérent avec le choix SELinux). Le passer à 'enabled' (group_vars/host_vars)
+# pour garantir que l'installeur ouvrira bien les ports.
+#
+# FRONTIÈRE DEV : l'état firewalld de la machine de dev n'est PAS celui de la cible.
+
+- name: Lire l'état des services systemd (dont firewalld)
+  ansible.builtin.service_facts:
+  tags:
+    - preflight_firewalld_guard
+
+- name: Vérifier l'état firewalld exigé (optionnel — ex. 'enabled' si mandaté)
+  ansible.builtin.assert:
+    that:
+      - (ansible_facts.services['firewalld.service'].status | default('absent')) == preflight_firewalld_required_state
+    fail_msg: >-
+      État firewalld
+      '{{ ansible_facts.services['firewalld.service'].status | default('absent') }}'
+      sur {{ inventory_hostname }} ; état exigé '{{ preflight_firewalld_required_state }}'
+      (preflight_firewalld_required_state). Rappel : si firewalld n'est pas 'enabled',
+      l'installeur N'OUVRIRA PAS les ports composants (ses règles firewalld sont
+      silencieusement ignorées).
+    success_msg: >-
+      État firewalld conforme :
+      '{{ ansible_facts.services['firewalld.service'].status | default('absent') }}'.
+    quiet: true
+  when: (preflight_firewalld_required_state | default('')) | length > 0
+  tags:
+    - preflight_firewalld_guard

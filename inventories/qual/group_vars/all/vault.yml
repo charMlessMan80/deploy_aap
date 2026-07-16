@@ -1,0 +1,25 @@
+---
+# inventories/qual/group_vars/all/vault.yml — Mapping secrets QUALIFICATION.
+#
+# CLAUDE.md 5.6 : AUCUNE valeur secrète ici, même factice. Mapping des variables
+# de mot de passe de l'installeur vers des `vault_*` (valeurs chiffrées plus tard,
+# jamais committées). Secrets qual STRICTEMENT distincts de prod.
+
+# --- Mots de passe admin des composants ---
+gateway_admin_password: "{{ vault_gateway_admin_password }}"
+controller_admin_password: "{{ vault_controller_admin_password }}"
+hub_admin_password: "{{ vault_hub_admin_password }}"
+eda_admin_password: "{{ vault_eda_admin_password }}"
+
+# --- PostgreSQL : compte admin + un mot de passe par base/service ---
+postgresql_admin_password: "{{ vault_postgresql_admin_password }}"
+gateway_pg_password: "{{ vault_gateway_pg_password }}"
+controller_pg_password: "{{ vault_controller_pg_password }}"
+hub_pg_password: "{{ vault_hub_pg_password }}"
+eda_pg_password: "{{ vault_eda_pg_password }}"
+
+# --- PKI d'entreprise : passphrase de la clé CA ---
+ca_tls_key_passphrase: "{{ vault_ca_tls_key_passphrase }}"
+
+# --- Registry (uniquement si pull registry activé dans main.yml) ---
+# registry_password: "{{ vault_registry_password }}"

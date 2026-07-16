@@ -1,0 +1,23 @@
+# Collections installées localement (via requirements.yml)
+/collections/
+
+# Setup bundle AAP (artefact téléchargé Red Hat, images conteneurs volumineuses)
+# Ne JAMAIS committer : dépasse la limite 100 Mo/fichier de GitHub (cf. images/*.tar.gz)
+/bundles/
+
+# Artefacts Ansible
+*.retry
+.ansible/
+__pycache__/
+*.pyc
+
+# Secrets — ne JAMAIS committer de valeur en clair (cf. CLAUDE.md 5.6)
+# Les fichiers vault chiffrés (vault.yml) PEUVENT être committés car chiffrés,
+# mais le mot de passe de vault ne l'est jamais :
+.vault_pass
+vault-password*
+*.vault-pass
+
+# Divers
+*.log
+.DS_Store

@@ -1,0 +1,100 @@
+---
+# roles/postcheck/defaults/main.yml — Valeurs par défaut du rôle postcheck.
+#
+# CLAUDE.md 5.6 : aucun secret ici. CLAUDE.md 5.7 : variables spécifiques au rôle,
+# préfixées `postcheck_` (les vars projet-wide comme aap_user / custom_ca_cert sont
+# en group_vars/all et RÉUTILISÉES telles quelles ici).
+#
+# Le postcheck NE RÉINVENTE PAS de sondes : chaque point de contrôle ci-dessous est
+# SOURCÉ sur ce que l'installateur (ansible.containerized_installer) interroge déjà.
+# Références bundle (chemins relatifs à collections/ansible_collections/ansible/
+# containerized_installer/roles/) :
+#   - gateway   : automationgateway/tasks/postinstall.yml     -> /api/gateway/v1/ping/  (status 200)
+#   - controller: automationcontroller/tasks/license.yml      -> /api/v2/ping/          (status 200)
+#   - eda       : automationeda/tasks/decision_environment.yml -> /api/eda/v1/status/   (content.status == 'good')
+#   - hub       : automationhub/tasks/upload_collections.yml  -> /pulp/api/v3/status/   (status 200)
+# Noms des services systemd (rootless, scope user) : */tasks/systemd.yml de chaque rôle.
+
+# ===========================================================================
+# Services systemd (conteneurs Podman rootless) — SOURCÉ */tasks/systemd.yml.
+# L'installateur les gère en `scope: user` sous l'utilisateur applicatif (aap).
+# ===========================================================================
+postcheck_systemd_scope: user
+
+postcheck_gateway_services:
+  - automation-gateway.service
+  - automation-gateway-proxy.service
+
+postcheck_controller_services:
+  - automation-controller-task.service
+  - automation-controller-web.service
+  - automation-controller-rsyslog.service
+
+postcheck_hub_services:
+  - automation-hub-api.service
+  - automation-hub-content.service
+  - automation-hub-web.service
+# À VÉRIFIER : workers hub `automation-hub-worker-<N>.service` (nombre = hub_workers_range,
+#   dépend de la conf). Non listés ici pour ne pas inventer un nombre d'instances.
+
+postcheck_eda_services:
+  - automation-eda-api.service
+  - automation-eda-web.service
+# À VÉRIFIER : services EDA additionnels selon la conf (automation-eda-daphne.service,
+#   automation-eda-worker-<N>.service, automation-eda-activation-worker-<N>.service,
+#   automation-eda-scheduler.service). Non listés (nombre/présence dépendent de la conf).
+
+postcheck_execution_services:
+  - receptor.service
+
+# Répertoire du bus utilisateur systemd --user (rootless + linger activé par le
+# preflight => /run/user/<uid> existe). L'UID est résolu au runtime (getent).
+postcheck_xdg_runtime_dir: "/run/user/{{ _postcheck_aap_uid }}"
+
+# ===========================================================================
+# Ports HTTPS internes — SOURCÉ (defaults installer).
+#   gateway_nginx_https_port: 8446 ; controller_nginx_https_port: 8443.
+# ===========================================================================
+postcheck_gateway_https_port: 8446
+postcheck_controller_https_port: 8443
+
+# ===========================================================================
+# Chemins des endpoints de santé — SOURCÉ (cf. en-tête).
+# ===========================================================================
+postcheck_gateway_ping_path: /api/gateway/v1/ping/
+postcheck_controller_ping_path: /api/v2/ping/
+postcheck_eda_status_path: /api/eda/v1/status/
+postcheck_hub_status_path: /pulp/api/v3/status/
+
+# ===========================================================================
+# URLs construites.
+#   - gateway/controller : vérifiés EN DIRECT sur chaque nœud (comme l'installateur).
+#   - eda/hub            : vérifiés VIA le point d'entrée plateforme (proxy envoy/VIP),
+#                          comme l'installateur qui tape _gateway_proxy_url.
+# ===========================================================================
+postcheck_gateway_health_url: "https://{{ inventory_hostname }}:{{ postcheck_gateway_https_port }}{{ postcheck_gateway_ping_path }}"
+postcheck_controller_health_url: "https://{{ inventory_hostname }}:{{ postcheck_controller_https_port }}{{ postcheck_controller_ping_path }}"
+
+# À VÉRIFIER : URL du point d'entrée unique de la plateforme (LB VIP + FQDN devant
+#   les gateways, proxy envoy — défaut installer envoy_https_port: 443). DOIT être
+#   renseignée pour vérifier EDA et hub (sinon les gardes ci-dessous échouent).
+#   ex. postcheck_gateway_proxy_url: "https://aap.prod.example.com"
+postcheck_gateway_proxy_url: ""
+postcheck_eda_health_url: "{{ postcheck_gateway_proxy_url }}{{ postcheck_eda_status_path }}"
+postcheck_hub_health_url: "{{ postcheck_gateway_proxy_url }}{{ postcheck_hub_status_path }}"
+
+# ===========================================================================
+# TLS : s'appuyer sur le trust d'entreprise (cohérence verify-full du reste du
+# dépôt). validate_certs=true par défaut — NE PAS désactiver la vérification TLS.
+#   postcheck_ca_path : réutilise custom_ca_cert (CA d'entreprise). Si vide, on
+#   omet ca_path et on s'appuie sur le trust store OS.
+# À VÉRIFIER : selon que la CA d'entreprise est déjà dans le trust store OS ou non,
+#   ca_path peut rester vide (trust OS) ou pointer le bundle CA.
+# ===========================================================================
+postcheck_validate_certs: true
+postcheck_ca_path: "{{ custom_ca_cert | default('') }}"
+
+# Temporisation des sondes HTTP (lecture seule).
+postcheck_http_timeout: 30
+postcheck_http_retries: 1
+postcheck_http_delay: 10

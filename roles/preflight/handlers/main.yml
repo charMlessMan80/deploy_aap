@@ -1,0 +1,8 @@
+---
+# roles/preflight/handlers/main.yml — Handlers du rôle preflight.
+
+- name: Restart chronyd
+  ansible.builtin.service:
+    name: "{{ preflight_chrony_service }}"
+    state: restarted
+  become: true

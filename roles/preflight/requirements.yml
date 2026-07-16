@@ -1,0 +1,26 @@
+---
+# roles/preflight/requirements.yml — Dépendances de collection PROPRES au rôle preflight.
+#
+# Déclaration explicite pour survivre à un découplage du bundle : le rôle utilise
+# `community.postgresql.postgresql_ping` (brique 1b). Cette collection EST vendorée
+# dans le setup bundle AAP 2.6 (collections/ansible_collections/community/postgresql),
+# et est aussi publiée sur Galaxy — donc résoluble même hors bundle.
+#
+# Installation (depuis le bundle en priorité, cf. ansible.cfg collections_path) :
+#   ansible-galaxy collection install -r roles/preflight/requirements.yml -p ./collections
+#
+# NB : community.general est ABSENT du bundle — ne PAS l'utiliser dans ce rôle.
+# Collections vendorées utilisables : ansible.posix, community.crypto,
+# community.postgresql, containers.podman.
+
+collections:
+  - name: community.postgresql
+    # version: ""   # À VÉRIFIER : épingler la version alignée sur le bundle
+    #               #   (bundle : community.postgresql-3.14.3) si découplage de Galaxy.
+
+  # Brique 2 (enregistrement Satellite) : redhat_subscription + rhsm_repository.
+  # ABSENTE du bundle AAP (contrairement à community.postgresql), mais PUBLIÉE sur
+  # Galaxy — à fournir aux nœuds seed (Galaxy public OU Automation Hub interne).
+  # À VÉRIFIER (infra) : disponibilité réelle sur le seed (accès Galaxy vs Hub interne).
+  - name: community.general
+    # version: ""   # À VÉRIFIER : version à épingler selon la source retenue

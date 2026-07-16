@@ -1,0 +1,25 @@
+---
+# playbooks/postcheck.yml — Vérifications post-installation (LECTURE SEULE).
+#
+# Portée (cf. CLAUDE.md 4) : post-checks basiques de vérification de service. Ne
+# remplace pas les checks internes de l'installeur — s'aligne sur SES points de
+# contrôle (endpoints de santé, services systemd). Aucune configuration métier.
+#
+# S'exécute APRÈS l'installateur, sur une plateforme AAP réellement installée. En
+# dev (hors ligne) : seuls syntax-check / ansible-lint / gating sont validables ;
+# les vérifications réelles s'exécutent sur le seed, rien n'est simulé.
+#
+# become: true est requis pour basculer vers l'utilisateur applicatif (aap) et
+# interroger le bus systemd --user (rootless). gather_facts inutile ici :
+# l'UID de aap est résolu via getent dans le rôle.
+
+- name: Postcheck — vérifications post-installation (lecture seule)
+  hosts: all
+  become: true
+  gather_facts: false
+  # Orchestration (cf. site.yml, Q1) : une vérification qui échoue sur UN nœud doit
+  # faire échouer tout le postcheck (signal clair). Mot-clé d'orchestration.
+  any_errors_fatal: true
+
+  roles:
+    - role: postcheck

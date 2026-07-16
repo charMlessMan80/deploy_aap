@@ -1,0 +1,40 @@
+---
+# roles/postcheck/tasks/eda.yml — Post-checks de l'EDA (gaté automationeda).
+# LECTURE SEULE. S'exécute sur le seed après install (non simulable en dev).
+
+- name: Postcheck eda — statut des conteneurs systemd
+  ansible.builtin.include_tasks: systemd_status.yml
+  vars:
+    postcheck_component: eda
+    postcheck_services: "{{ postcheck_eda_services }}"
+
+- name: Postcheck eda — point d'entrée plateforme requis pour la sonde EDA
+  ansible.builtin.assert:
+    that:
+      - postcheck_gateway_proxy_url | length > 0
+    fail_msg: >-
+      postcheck_gateway_proxy_url (URL du point d'entrée plateforme / VIP) doit être
+      défini pour vérifier l'EDA via le proxy.
+    quiet: true
+  run_once: true
+
+# SOURCÉ : automationeda/tasks/decision_environment.yml
+#   (uri /api/eda/v1/status/, return_content, content.status == 'good' ;
+#    rejet du contenu vide et de 'no healthy upstream').
+# Vérifié VIA le point d'entrée plateforme (proxy), comme l'installateur.
+- name: Postcheck eda — endpoint de statut EDA (/api/eda/v1/status/)
+  ansible.builtin.uri:
+    url: "{{ postcheck_eda_health_url }}"
+    validate_certs: "{{ postcheck_validate_certs }}"
+    ca_path: "{{ postcheck_ca_path | default(omit, true) }}"
+    timeout: "{{ postcheck_http_timeout }}"
+    return_content: true
+  register: _postcheck_eda_http
+  until:
+    - _postcheck_eda_http.content | default('') != ''
+    - _postcheck_eda_http.content != 'no healthy upstream'
+    - (_postcheck_eda_http.content | from_json).status == 'good'
+  retries: "{{ postcheck_http_retries }}"
+  delay: "{{ postcheck_http_delay }}"
+  changed_when: false
+  run_once: true

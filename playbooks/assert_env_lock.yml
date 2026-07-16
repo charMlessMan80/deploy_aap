@@ -1,0 +1,77 @@
+---
+# playbooks/assert_env_lock.yml — Verrouillage d'environnement (protège la PROD).
+#
+# Importé par playbooks/install.yml AVANT ansible.containerized_installer.install
+# (cf. ordre des import_playbook). L'assert s'exécute donc AVANT toute task/rôle de
+# l'installeur qui consomme les variables protégées — piège CLAUDE.md 5.2 :
+# l'assertion PRÉCÈDE l'usage des variables qu'elle protège.
+#
+# Ne se connecte à AUCUNE cible : `assert` est une action locale (contrôleur) et
+# `gather_facts: false` supprime le setup. Donc validable hors ligne (CLAUDE.md 2).
+#
+# Mécanisme CA confirmé (bundle) : en verify-full, la validation du certificat du
+# serveur PostgreSQL externe se fait contre le truststore système du conteneur,
+# alimenté par `custom_ca_cert` via `update-ca-trust`. Il n'existe AUCUN
+# `*_pg_sslrootcert` / `*_pg_ca` : ne PAS en réintroduire.
+
+- name: Verrouillage d'environnement (protection production)
+  hosts: all
+  run_once: true
+  gather_facts: false
+  become: false
+  # Orchestration (cf. site.yml, Q1/Q2) : le verrou est tout-ou-rien. run_once le
+  # rend déjà uniforme, any_errors_fatal le garantit en défense en profondeur — un
+  # échec du verrou stoppe la chaîne AVANT l'installeur.
+  any_errors_fatal: true
+  vars:
+    _pg_services:
+      - gateway
+      - controller
+      - hub
+      - eda
+  tasks:
+    - name: "PROD — interdire toute variable de banc de test (test_harness_*)"
+      ansible.builtin.assert:
+        that:
+          - "vars.keys() | select('match', '^test_harness_') | list | length == 0"
+        fail_msg: >-
+          [PROD] Variables de banc de test interdites en production :
+          {{ vars.keys() | select('match', '^test_harness_') | list }}.
+          Elles ne doivent exister que dans inventories/qual.
+        success_msg: "[PROD] Aucune variable test_harness_* presente."
+        quiet: true
+      when: aap_environment == 'prod'
+
+    - name: "PROD — exiger pg_sslmode=verify-full sur les 4 services"
+      ansible.builtin.assert:
+        that:
+          - "lookup('vars', item ~ '_pg_sslmode') == 'verify-full'"
+        fail_msg: >-
+          [PROD] {{ item }}_pg_sslmode = '{{ lookup('vars', item ~ '_pg_sslmode') }}'.
+          'verify-full' est exige (le defaut bundle 'prefer' est refuse).
+        success_msg: "[PROD] {{ item }}_pg_sslmode = verify-full."
+        quiet: true
+      loop: "{{ _pg_services }}"
+      when: aap_environment == 'prod'
+
+    - name: "Couplage — verify-full => custom_ca_cert defini (tous environnements)"
+      # On verifie SEULEMENT que la VARIABLE custom_ca_cert est definie et non vide.
+      # La presence physique du PEM (emplacement dicte par ca_tls_remote, defaut
+      # false = sur le seed) releve du role preflight, PAS de ce verrou : choix
+      # delibere pour ne pas melanger validation de config et etat du systeme.
+      ansible.builtin.assert:
+        that:
+          - custom_ca_cert is defined
+          - custom_ca_cert | length > 0
+        fail_msg: >-
+          Au moins un service PostgreSQL utilise pg_sslmode=verify-full :
+          'custom_ca_cert' doit etre defini et non vide (CA du serveur PG externe
+          injectee au truststore via update-ca-trust ; aucun *_pg_sslrootcert).
+        success_msg: "custom_ca_cert defini — couplage verify-full satisfait."
+        quiet: true
+      when:
+        - >-
+          (lookup('vars', 'gateway_pg_sslmode') == 'verify-full') or
+          (lookup('vars', 'controller_pg_sslmode') == 'verify-full') or
+          (lookup('vars', 'hub_pg_sslmode') == 'verify-full') or
+          (lookup('vars', 'eda_pg_sslmode') == 'verify-full')

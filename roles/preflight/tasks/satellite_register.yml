@@ -1,0 +1,89 @@
+---
+# roles/preflight/tasks/satellite_register.yml — Brique 2 : enregistrement Satellite.
+#
+# ORDRE DUR (Satellite 6.19 §6.2.2) : la CA du Satellite doit être dans le trust de
+# l'hôte AVANT redhat_subscription, sinon échec TLS. Les 3 étapes sont donc :
+#   1. CA Satellite (dépôt + garde de présence, bloquante) ;
+#   2. enregistrement (community.general.redhat_subscription) ;
+#   3. repos (community.general.rhsm_repository, conditionnel).
+#
+# CA CONSOMMÉE — forme confirmée (doc du module) : redhat_subscription N'A PAS de
+# paramètre de CA serveur. subscription-manager lit sa propre CA dir (/etc/rhsm/ca/)
+# et le trust système. On dépose donc la CA Satellite (katello-server-ca) dans
+# /etc/rhsm/ca/. (`rhsm_repo_ca_cert` du module = CA du CDN de contenu, PAS la CA
+# serveur : ne pas confondre.)
+#
+# FRONTIÈRE DEV : register + repos NON exécutables en dev (Satellite injoignable,
+# subscription-manager exige root + vrai hôte). En dev : --syntax-check / ansible-lint
+# uniquement. Rien n'est simulé, aucun register « réussi » n'est fabriqué.
+
+# --- Étape 1 : CA Satellite — dépôt + garde de présence ----------------------
+- name: Résoudre le chemin local de la CA Satellite
+  ansible.builtin.set_fact:
+    _pf_satellite_ca: "{{ satellite_ca_cert | default('/etc/rhsm/ca/katello-server-ca.pem') }}"
+  tags:
+    - preflight_satellite_ca
+
+# Dépôt OPTIONNEL : uniquement si une source est fournie. Source réelle et mode de
+# fourniture non figés (dépend de l'infra Satellite).
+# À VÉRIFIER : source réelle de la CA Satellite (variable satellite_ca_src) et son
+#   emplacement (contrôleur vs nœud, via satellite_ca_src_remote).
+- name: Déposer la CA du Satellite dans le trust rhsm (si une source est fournie)
+  ansible.builtin.copy:
+    src: "{{ satellite_ca_src }}"
+    dest: "{{ _pf_satellite_ca }}"
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: "{{ satellite_ca_src_remote | default(false) | bool }}"
+  become: true
+  when: satellite_ca_src is defined
+  tags:
+    - preflight_satellite_ca
+
+- name: Vérifier la présence de la CA Satellite dans le trust rhsm
+  ansible.builtin.stat:
+    path: "{{ _pf_satellite_ca }}"
+  register: _pf_sat_ca_stat
+  tags:
+    - preflight_satellite_ca
+
+- name: Échouer si la CA Satellite est absente (garde AVANT tout register)
+  ansible.builtin.assert:
+    that:
+      - _pf_sat_ca_stat.stat.exists
+    fail_msg: >-
+      CA Satellite introuvable : '{{ _pf_satellite_ca }}' absent sur
+      {{ inventory_hostname }}. subscription-manager échouerait en TLS. Déposer la
+      CA du Satellite (katello-server-ca) dans le trust rhsm avant l'enregistrement.
+    success_msg: "CA Satellite présente : '{{ _pf_satellite_ca }}'."
+    quiet: true
+  tags:
+    - preflight_satellite_ca
+
+# --- Étape 2 : enregistrement — APRÈS la garde CA ----------------------------
+# EXÉCUTION : non joignable en dev. redhat_subscription est idempotent — les
+# credentials ne sont consommés que si l'hôte n'est PAS déjà enregistré (ou si
+# force_register). Il ne re-register donc pas un hôte déjà abonné.
+# À VÉRIFIER (infra) : satellite_activation_key, satellite_org_id,
+#   satellite_server_hostname (fournis en group_vars ; l'AK n'existe pas encore).
+- name: Enregistrer l'hôte auprès du Satellite (activation key + organisation)
+  community.general.redhat_subscription:
+    state: present
+    server_hostname: "{{ satellite_server_hostname }}"
+    activationkey: "{{ satellite_activation_key }}"
+    org_id: "{{ satellite_org_id }}"
+    force_register: "{{ satellite_force_register | default(false) | bool }}"
+  become: true
+  no_log: true
+
+# --- Étape 3 : repos — conditionnel ------------------------------------------
+# Skip par défaut : l'activation key active généralement baseos/appstream/aap-2.6.
+# À VÉRIFIER (infra) : IDs de repos exacts (satellite_repos), à recopier depuis
+#   Satellite (ex. rhel-9-for-x86_64-baseos-rpms, ...-appstream-rpms, repo AAP 2.6).
+- name: Activer les repos requis via RHSM (si non portés par l'activation key)
+  community.general.rhsm_repository:
+    name: "{{ satellite_repos | default([]) }}"
+    state: enabled
+  become: true
+  when: satellite_manage_repos | default(false) | bool

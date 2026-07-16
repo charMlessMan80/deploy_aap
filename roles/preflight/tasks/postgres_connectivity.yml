@@ -1,0 +1,19 @@
+---
+# roles/preflight/tasks/postgres_connectivity.yml — Brique 1b.
+#
+# Connectivité PostgreSQL TLS par service (gateway, controller, hub, eda). Chaque
+# service est testé DEPUIS les nœuds de son groupe — aligné sur la collection
+# (roles/preflight/tasks/nodes.yml : les checks PG sont gardés par appartenance au
+# groupe du composant, ex. `inventory_hostname in groups.get('automationhub', [])`).
+#
+# FRONTIÈRE DEV / EXÉCUTION : le ping TLS réel n'est obtenu qu'à l'exécution sur les
+# nœuds (base externe NON joignable en dev hors infra). En dev : --syntax-check /
+# ansible-lint uniquement. Aucune connexion n'est simulée, aucun succès n'est fabriqué.
+
+- name: Tester la connectivité PostgreSQL TLS des services hébergés par ce nœud
+  ansible.builtin.include_tasks: postgres_ping_service.yml
+  loop: "{{ preflight_pg_services }}"
+  loop_control:
+    loop_var: _svc
+    label: "{{ _svc.name }}"
+  when: inventory_hostname in groups.get(_svc.group, [])

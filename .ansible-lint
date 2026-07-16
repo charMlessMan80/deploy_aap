@@ -1,0 +1,16 @@
+---
+# Configuration ansible-lint — validation hors ligne (cf. CLAUDE.md 2 et 5.5).
+# Objectif : lint propre, idempotence, pas de command/shell superflu.
+
+exclude_paths:
+  - collections/
+  - .github/
+
+# Profil : à ajuster selon la version d'ansible-lint disponible sur les nœuds seed.
+# À VÉRIFIER : nom de profil supporté par la version d'ansible-lint utilisée
+#   (production, safety, shared, ...). Confirmer via `ansible-lint --version`.
+# profile: production
+
+# Aucune règle désactivée par défaut : on garde le lint strict.
+skip_list: []
+warn_list: []

@@ -1,0 +1,29 @@
+---
+# inventories/prod/group_vars/all/vault.yml — Mapping secrets PRODUCTION.
+#
+# CLAUDE.md 5.6 : AUCUNE valeur secrète ici, même factice. Ce fichier ne fait que
+# MAPPER chaque variable de mot de passe attendue par l'installeur vers une
+# variable `vault_*`. Les VALEURS des `vault_*` seront définies dans un fichier
+# réellement chiffré (ansible-vault) avant toute exécution — jamais committées en clair.
+#
+# Noms de variables installeur = résolus contre le bundle (README + inventory).
+# Noms de variables `vault_*` = à chiffrer plus tard (non définis dans le dépôt).
+
+# --- Mots de passe admin des composants ---
+gateway_admin_password: "{{ vault_gateway_admin_password }}"
+controller_admin_password: "{{ vault_controller_admin_password }}"
+hub_admin_password: "{{ vault_hub_admin_password }}"
+eda_admin_password: "{{ vault_eda_admin_password }}"
+
+# --- PostgreSQL : compte admin + un mot de passe par base/service ---
+postgresql_admin_password: "{{ vault_postgresql_admin_password }}"
+gateway_pg_password: "{{ vault_gateway_pg_password }}"
+controller_pg_password: "{{ vault_controller_pg_password }}"
+hub_pg_password: "{{ vault_hub_pg_password }}"
+eda_pg_password: "{{ vault_eda_pg_password }}"
+
+# --- PKI d'entreprise : passphrase de la clé CA ---
+ca_tls_key_passphrase: "{{ vault_ca_tls_key_passphrase }}"
+
+# --- Registry (uniquement si pull registry activé dans main.yml) ---
+# registry_password: "{{ vault_registry_password }}"

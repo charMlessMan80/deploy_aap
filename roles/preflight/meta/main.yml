@@ -1,0 +1,15 @@
+---
+# roles/preflight/meta/main.yml — Métadonnées du rôle preflight.
+galaxy_info:
+  role_name: preflight
+  namespace: aap_automation         # À VÉRIFIER : namespace souhaité si publication Galaxy
+  author: aap-automation            # À VÉRIFIER : auteur/mainteneur officiel
+  description: Préparation des VM cibles avant installation AAP 2.6 containerized.
+  license: Apache-2.0               # À VÉRIFIER : licence réelle du dépôt
+  min_ansible_version: "2.14"       # À VÉRIFIER : version ansible-core cible du nœud seed
+  platforms:
+    - name: EL                      # À VÉRIFIER : versions RHEL réellement supportées
+      versions:
+        - "9"
+
+dependencies: []

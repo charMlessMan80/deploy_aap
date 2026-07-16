@@ -1,0 +1,60 @@
+---
+# roles/preflight/tasks/hub_nfs_prereq.yml — Brique 6 : PRÉREQUIS du partage NFS du hub.
+#
+# NE MONTE PAS le partage : l'installeur le monte lui-même (ansible.posix.mount,
+# automationhub/tasks/nfs.yml:22) ET installe nfs-utils lui-même (nfs.yml : package
+# nfs-utils sur non-ostree / assert sur ostree). Ajouter ici un montage OU un install
+# nfs-utils = double emploi / conflit d'options avec l'installeur → INTERDIT.
+#
+# nfs-utils : NON installé ici (géré par l'installeur, sourcé) — anti sur-couverture,
+# même raison que podman / python3-cryptography. Le test d'atteignabilité utilise
+# ansible.builtin.wait_for (module TCP), qui NE dépend PAS de nfs-utils et NE monte PAS.
+#
+# Périmètre : (1) cohérence des variables hub NFS (testable hors ligne),
+# (2) atteignabilité réseau de l'export (seed uniquement). Gaté aux nœuds automationhub
+# au niveau de l'include (main.yml).
+#
+# FRONTIÈRE DEV : le test réseau (wait_for) = seed uniquement (export injoignable en
+# dev). Les asserts de cohérence des variables sont testables hors ligne.
+
+# --- Cohérence des variables hub NFS (testable hors ligne) -------------------
+- name: "Hub HA — stockage partagé (hub_shared_data_path) requis si plus d'un hub"
+  ansible.builtin.assert:
+    that:
+      - (hub_shared_data_path | default('')) | length > 0
+    fail_msg: >-
+      {{ groups['automationhub'] | length }} nœuds automationhub mais
+      hub_shared_data_path n'est pas défini. Un hub HA exige un stockage NFS PARTAGÉ
+      commun aux hubs (sinon leur contenu diverge). Définir hub_shared_data_path
+      ('serveur:/export') en group_vars.
+    success_msg: "hub_shared_data_path défini pour hub HA."
+    quiet: true
+  when: (groups.get('automationhub', []) | length) > 1
+  tags:
+    - preflight_hub_nfs_guard
+
+- name: "Valider le format de hub_shared_data_path (serveur:/export)"
+  ansible.builtin.assert:
+    that:
+      - "':' in hub_shared_data_path"
+      - (hub_shared_data_path.split(':', 1)[0]) | length > 0
+      - (hub_shared_data_path.split(':', 1)[1]) | length > 0
+    fail_msg: >-
+      hub_shared_data_path='{{ hub_shared_data_path }}' invalide ;
+      format attendu 'serveur:/export'.
+    success_msg: "Format hub_shared_data_path valide : {{ hub_shared_data_path }}."
+    quiet: true
+  when: (hub_shared_data_path | default('')) | length > 0
+  tags:
+    - preflight_hub_nfs_guard
+
+# --- Atteignabilité réseau de l'export NFS (seed uniquement) -----------------
+- name: "Tester l'atteignabilité TCP du serveur NFS (port {{ preflight_nfs_port }})"
+  # wait_for = module (pas de command), NE MONTE PAS. Exécuté sur le seed (réseau
+  # réel) ; non joignable en dev. NFSv4 = port 2049.
+  # À VÉRIFIER : si l'export est servi en NFSv3, tester aussi rpcbind (111) / mountd.
+  ansible.builtin.wait_for:
+    host: "{{ hub_shared_data_path.split(':', 1)[0] }}"
+    port: "{{ preflight_nfs_port }}"
+    timeout: "{{ preflight_nfs_probe_timeout }}"
+  when: (hub_shared_data_path | default('')) | length > 0

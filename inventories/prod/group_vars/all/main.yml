@@ -1,0 +1,160 @@
+---
+# inventories/prod/group_vars/all/main.yml — Variables NON-SECRÈTES, PRODUCTION.
+#
+# CLAUDE.md 5.4 : ce group_vars vit À CÔTÉ de l'inventaire prod. JAMAIS mutualisé
+# avec qual. CLAUDE.md 5.6 : aucun secret ici — les mots de passe sont en vault.yml
+# (références {{ vault_* }} uniquement).
+#
+# Noms de variables = ceux résolus contre le bundle (README + `inventory`
+# enterprise). Ce qui n'est pas fourni par l'infra reste `# À VÉRIFIER :`.
+
+# Marqueur d'environnement (sert au verrouillage prod/qual, cf. CLAUDE.md 5.2).
+aap_environment: prod
+
+# ===========================================================================
+# Utilisateur applicatif Podman rootless (projet-wide ; consommé par le preflight
+# et le contexte de l'installeur). Même valeur qu'en qual, mais déclaré séparément
+# dans chaque inventaire (CLAUDE.md 5.1 : aucun fichier partagé prod/qual).
+# ===========================================================================
+aap_user: aap
+aap_group: aap
+aap_user_home: /home/aap
+aap_user_shell: /bin/bash
+
+# ===========================================================================
+# Serveurs NTP (infra/projet). En environnement Satellite, l'horloge vient souvent
+# de l'AD/DC ou d'un NTP interne — NE PAS coder un pool public en dur.
+# ===========================================================================
+# À VÉRIFIER : serveurs NTP réels de l'environnement de PRODUCTION.
+ntp_servers: []
+# ex. ntp_servers:
+#   - ntp1.prod.example.com
+#   - ntp2.prod.example.com
+
+# ===========================================================================
+# Partage NFS du contenu du hub (hub HA). L'INSTALLEUR monte lui-même le partage
+# (ansible.posix.mount) ET installe nfs-utils : ici on ne fait que fournir les
+# variables + prérequis (cohérence, atteignabilité). Ne PAS monter côté preflight.
+# ===========================================================================
+# À VÉRIFIER : export NFS réel du hub (format 'serveur:/export').
+# hub_shared_data_path: "nfshub.prod.example.com:/export/aap-hub"
+hub_shared_data_mount_opts: "rw,sync,hard"
+# À VÉRIFIER : sous SELinux enforcing, le partage NFS peut exiger un label via
+#   context= (le relabel :z/:Z ne marche pas sur NFS ; l'installeur n'ajoute PAS de
+#   context=, et la doc/README ne le documente pas). Déterminer le mécanisme réel
+#   (context=system_u:object_r:<type>:s0 OU un booléen) selon l'état SELinux et la
+#   conf NFS — NE PAS poser une valeur non vérifiée (casse sur le vrai NFS).
+#   ex. hub_shared_data_mount_opts: "rw,sync,hard,context=system_u:object_r:container_file_t:s0"
+
+# ===========================================================================
+# Installation par bundle (images servies par le bundle)
+# ===========================================================================
+bundle_install: true
+# bundle_dir DOIT se terminer par /bundle (défaut bundle :
+# {{ lookup("ansible.builtin.env", "PWD") }}/bundle). L'exécution se fait depuis
+# les nœuds seed : l'emplacement dépend du seed et n'est pas encore figé.
+# À VÉRIFIER : emplacement du bundle extrait sur le nœud seed (chemin absolu
+#   finissant par /bundle).
+# bundle_dir: /opt/aap/seed/bundle
+
+# ===========================================================================
+# Registry (OPTIONNEL quand bundle_install=true : images fournies par le bundle)
+# ===========================================================================
+# Si pull depuis registry interne / Satellite au lieu du bundle, renseigner ci-dessous
+# (registry_password en vault.yml). Défaut bundle de registry_url : registry.redhat.io.
+# À VÉRIFIER : FQDN du registry Satellite (sinon laisser le bundle servir les images).
+# registry_url: registry.satellite.prod.example.com
+# registry_username: <compte registry Satellite>   # À VÉRIFIER : compte de service
+# registry_tls_verify: true
+
+# ===========================================================================
+# PostgreSQL externe (géré par les DBA) — TLS verify-full EXIGÉ (CLAUDE.md 3)
+# ===========================================================================
+# Le défaut bundle de <svc>_pg_sslmode est 'prefer' : REFUSÉ ici, on force
+# verify-full sur les 4 services. Le verrouillage par `assert` sera posé dans le
+# livrable du play d'install (pas ici).
+postgresql_disable_tls: false
+# Compte admin PG (création bases/rôles) ; mot de passe en vault.yml.
+# À VÉRIFIER : nom du compte admin PostgreSQL fourni par les DBA.
+# postgresql_admin_username: <admin DBA>
+
+# --- Gateway DB (base par défaut : gateway) ---
+# À VÉRIFIER : host/port PostgreSQL réels (fournis par les DBA).
+# gateway_pg_host: db-gateway.prod.example.com
+gateway_pg_port: 5432
+gateway_pg_database: gateway
+gateway_pg_username: gateway
+gateway_pg_sslmode: verify-full        # explicite (défaut bundle : prefer)
+
+# --- Controller DB (base par défaut : awx) ---
+# controller_pg_host: db-controller.prod.example.com   # À VÉRIFIER (DBA)
+controller_pg_port: 5432
+controller_pg_database: awx
+controller_pg_username: awx
+controller_pg_sslmode: verify-full     # explicite (défaut bundle : prefer)
+
+# --- Hub DB (base par défaut : pulp) ---
+# hub_pg_host: db-hub.prod.example.com                 # À VÉRIFIER (DBA)
+hub_pg_port: 5432
+hub_pg_database: pulp
+hub_pg_username: pulp
+hub_pg_sslmode: verify-full            # explicite (défaut bundle : prefer)
+
+# --- EDA DB (base par défaut : eda) ---
+# eda_pg_host: db-eda.prod.example.com                 # À VÉRIFIER (DBA)
+eda_pg_port: 5432
+eda_pg_database: eda
+eda_pg_username: eda
+eda_pg_sslmode: verify-full            # explicite (défaut bundle : prefer)
+
+# À VÉRIFIER : source de la CA racine servant à valider le certificat SERVEUR
+#   PostgreSQL en verify-full. Aucune variable *_pg_sslrootcert / pg_ca n'existe
+#   dans le README du bundle : confirmer comment l'installeur fournit cette CA
+#   (via ca_tls_cert / custom_ca_cert ajoutée au trust, ou trust système du
+#   conteneur). À lever contre la doc AAP 2.6 avant le play d'install.
+
+# ===========================================================================
+# Gateway front-end — point d'entrée unique (VIP / load balancer)
+# ===========================================================================
+# À VÉRIFIER : URL publique du gateway derrière la VIP/LB (FQDN d'entrée unique).
+# gateway_main_url: https://aap.prod.example.com
+
+# ===========================================================================
+# Redis — cluster (CLAUDE.md 3)
+# ===========================================================================
+redis_mode: cluster                    # explicite (défaut bundle : cluster)
+
+# ===========================================================================
+# Certificats — PKI d'entreprise (jamais la CA auto-signée de l'installeur)
+# ===========================================================================
+# CA validant le certificat du serveur PostgreSQL externe en verify-full.
+# Mécanisme confirmé (bundle) : custom_ca_cert est injectée au truststore système
+# du conteneur via update-ca-trust ; c'est CETTE CA que sslrootcert (=ca_trust_bundle)
+# utilise au runtime. Aucun *_pg_sslrootcert n'existe. custom_ca_cert = UN chemin PEM
+# (concaténer plusieurs CA en un seul fichier si nécessaire).
+# L'assert de verrouillage exige que la VARIABLE soit définie (couplage verify-full) ;
+# le dépôt physique du fichier relève du preflight.
+# À VÉRIFIER : chemin réel + émission de la CA (PKI d'entreprise non émise) et
+#   valeur de ca_tls_remote (false = fichier sur le seed, défaut).
+custom_ca_cert: /etc/pki/aap/enterprise-ca.crt
+# ca_tls_remote: false
+
+# CA interne AAP (anchor tls-aap, DISTINCTE de custom_ca_cert) : passphrase en vault.
+# À VÉRIFIER : chemins réels des fichiers CA interne si l'installeur signe des certs
+#   (sinon certs de service pré-émis par la PKI via <svc>_tls_cert/<svc>_tls_key).
+# ca_tls_cert: /etc/pki/aap/enterprise-ca.crt
+# ca_tls_key: /etc/pki/aap/enterprise-ca.key
+
+# Certificats de service : le SAN doit couvrir tous les FQDN du service réparti,
+# VIP du gateway incluse (CLAUDE.md 3). Noms de variables : <svc>_tls_cert /
+# <svc>_tls_key / <svc>_tls_remote pour gateway, controller, hub, eda ; aussi
+# postgresql_tls_* et receptor_tls_*.
+# À VÉRIFIER : SAN exacts + chemins des certificats par service (certs non émis).
+# gateway_tls_cert: /etc/pki/aap/gateway.crt
+# gateway_tls_key: /etc/pki/aap/gateway.key
+# controller_tls_cert: /etc/pki/aap/controller.crt
+# controller_tls_key: /etc/pki/aap/controller.key
+# hub_tls_cert: /etc/pki/aap/hub.crt
+# hub_tls_key: /etc/pki/aap/hub.key
+# eda_tls_cert: /etc/pki/aap/eda.crt
+# eda_tls_key: /etc/pki/aap/eda.key

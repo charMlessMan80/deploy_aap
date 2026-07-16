@@ -1,0 +1,57 @@
+---
+# roles/preflight/tasks/pki_ca.yml — Brique 1a : dépôt / présence du PEM de CA.
+#
+# Contexte (résolu) : verify-full valide le certificat du serveur PostgreSQL
+# externe contre le truststore système du conteneur, alimenté par `custom_ca_cert`
+# via update-ca-trust. Le verrou d'install vérifie que la VARIABLE est définie ;
+# ICI, au preflight, on vérifie la présence du FICHIER.
+#
+# Interprétation de `ca_tls_remote` — confirmée contre la collection
+# (roles/preflight/tasks/postgresql.yml : `copy ... remote_src: ca_tls_remote`) :
+#   false (défaut) => le PEM est lu/attendu sur le SEED (contrôleur = localhost) ;
+#   true           => sur le NŒUD cible (inventory_hostname).
+# Le rôle gère le bon hôte SANS coder de chemin en dur : `custom_ca_cert` est piloté
+# par les group_vars (chemin réel # À VÉRIFIER : tant que la PKI n'est pas émise).
+
+- name: Garde — custom_ca_cert doit être défini (couplage verify-full)
+  ansible.builtin.assert:
+    that:
+      - custom_ca_cert is defined
+      - custom_ca_cert | length > 0
+    fail_msg: "custom_ca_cert doit être défini (CA du serveur PostgreSQL externe)."
+    success_msg: "custom_ca_cert défini : {{ custom_ca_cert }}."
+    quiet: true
+  run_once: true
+
+# Dépôt OPTIONNEL du PEM : uniquement si une source est fournie. La source réelle et
+# le mode de fourniture ne sont pas figés (PKI d'entreprise non émise).
+# À VÉRIFIER : source réelle du PEM de CA à déposer (variable preflight_ca_cert_src)
+#   et son emplacement (contrôleur vs nœud) selon le processus PKI retenu.
+- name: Déposer le PEM de CA à l'emplacement custom_ca_cert (si une source est fournie)
+  ansible.builtin.copy:
+    src: "{{ preflight_ca_cert_src }}"
+    dest: "{{ custom_ca_cert }}"
+    mode: "0644"
+    remote_src: "{{ ca_tls_remote | default(false) | bool }}"
+  delegate_to: "{{ 'localhost' if not (ca_tls_remote | default(false) | bool) else inventory_hostname }}"
+  when: preflight_ca_cert_src is defined
+
+- name: Vérifier la présence du fichier custom_ca_cert
+  ansible.builtin.stat:
+    path: "{{ custom_ca_cert }}"
+  register: _pf_ca_stat
+  delegate_to: "{{ 'localhost' if not (ca_tls_remote | default(false) | bool) else inventory_hostname }}"
+
+- name: Échouer si le PEM de CA est absent
+  ansible.builtin.assert:
+    that:
+      - _pf_ca_stat.stat.exists
+    fail_msg: >-
+      PEM de CA introuvable : '{{ custom_ca_cert }}' absent sur
+      {{ 'le seed (localhost)' if not (ca_tls_remote | default(false) | bool) else inventory_hostname }}
+      (ca_tls_remote={{ ca_tls_remote | default(false) }}). Déposer la CA du serveur
+      PostgreSQL externe à cet emplacement avant l'installation.
+    success_msg: >-
+      PEM de CA présent : '{{ custom_ca_cert }}'
+      (sur {{ 'le seed' if not (ca_tls_remote | default(false) | bool) else inventory_hostname }}).
+    quiet: true

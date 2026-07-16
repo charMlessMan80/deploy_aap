@@ -1,0 +1,24 @@
+---
+# roles/postcheck/tasks/gateway.yml — Post-checks du gateway (gaté automationgateway).
+# LECTURE SEULE. S'exécute sur le seed après install (non simulable en dev).
+
+- name: Postcheck gateway — statut des conteneurs systemd
+  ansible.builtin.include_tasks: systemd_status.yml
+  vars:
+    postcheck_component: gateway
+    postcheck_services: "{{ postcheck_gateway_services }}"
+
+# SOURCÉ : automationgateway/tasks/postinstall.yml (uri /api/gateway/v1/ping/, status 200).
+# Vérifié EN DIRECT sur le nœud gateway, en TLS (trust d'entreprise).
+- name: Postcheck gateway — endpoint de santé (/api/gateway/v1/ping/)
+  ansible.builtin.uri:
+    url: "{{ postcheck_gateway_health_url }}"
+    validate_certs: "{{ postcheck_validate_certs }}"
+    ca_path: "{{ postcheck_ca_path | default(omit, true) }}"
+    timeout: "{{ postcheck_http_timeout }}"
+    status_code: 200
+  register: _postcheck_gateway_http
+  until: _postcheck_gateway_http.status == 200
+  retries: "{{ postcheck_http_retries }}"
+  delay: "{{ postcheck_http_delay }}"
+  changed_when: false

@@ -1,0 +1,42 @@
+---
+# roles/postcheck/tasks/main.yml — Point d'entrée du rôle postcheck.
+#
+# Portée (CLAUDE.md 4) : post-checks basiques (vérification de service). LECTURE
+# SEULE STRICTE — aucune mutation, aucune configuration métier (orgs/RBAC/contenu).
+# S'exécute APRÈS l'installateur, sur une plateforme AAP réellement installée.
+#
+# FRONTIÈRE HORS-LIGNE (dev) : structure/gating/résolution de vars validables ici ;
+# TOUTES les vérifications réelles (systemd, endpoints) s'exécutent SUR LE SEED après
+# install. Rien n'est simulé en dev.
+#
+# Gating par rôle de nœud (comme les checks PG par service / hub NFS du preflight).
+
+- name: Postcheck — résoudre l'UID de l'utilisateur applicatif (bus systemd --user)
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ aap_user }}"
+
+- name: Postcheck — mémoriser l'UID de l'utilisateur applicatif
+  ansible.builtin.set_fact:
+    # getent_passwd[<user>] = [passwd, uid, gid, gecos, home, shell] -> index 1 = uid.
+    _postcheck_aap_uid: "{{ getent_passwd[aap_user][1] }}"
+
+- name: Postcheck — vérifications du gateway
+  ansible.builtin.include_tasks: gateway.yml
+  when: inventory_hostname in groups.get('automationgateway', [])
+
+- name: Postcheck — vérifications du controller
+  ansible.builtin.include_tasks: controller.yml
+  when: inventory_hostname in groups.get('automationcontroller', [])
+
+- name: Postcheck — vérifications du hub
+  ansible.builtin.include_tasks: hub.yml
+  when: inventory_hostname in groups.get('automationhub', [])
+
+- name: Postcheck — vérifications de l'EDA
+  ansible.builtin.include_tasks: eda.yml
+  when: inventory_hostname in groups.get('automationeda', [])
+
+- name: Postcheck — vérifications des execution / hop nodes
+  ansible.builtin.include_tasks: execution.yml
+  when: inventory_hostname in groups.get('execution_nodes', [])

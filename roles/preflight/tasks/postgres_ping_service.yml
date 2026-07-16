@@ -1,0 +1,88 @@
+---
+# roles/preflight/tasks/postgres_ping_service.yml — test PG TLS pour UN service.
+#
+# Inclus en boucle depuis postgres_connectivity.yml ; `_svc` = {name, group}.
+# Aligné sur roles/preflight/tasks/postgresql.yml de la collection : on construit un
+# bundle CA temporaire = ca-bundle système + `custom_ca_cert`, puis
+# community.postgresql.postgresql_ping avec ssl_mode = <svc>_pg_sslmode DU service.
+#
+# EXÉCUTION : le ping n'aboutit qu'à l'exécution sur le nœud (base externe non
+# joignable en dev). Non simulé, non mocké.
+
+- name: "Connectivité PG TLS ({{ _svc.name }})"
+  block:
+    - name: "Créer un répertoire temporaire pour le bundle CA ({{ _svc.name }})"
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: "preflight_pg_ca_{{ _svc.name }}"
+      register: _pf_tmp_ca
+      changed_when: false
+
+    - name: "Copier le ca-bundle système dans le bundle temporaire ({{ _svc.name }})"
+      ansible.builtin.copy:
+        src: /etc/pki/tls/certs/ca-bundle.crt
+        dest: "{{ _pf_tmp_ca.path }}/ca-bundle.crt"
+        remote_src: true
+        mode: "0600"
+      changed_when: false
+
+    - name: "Copier custom_ca_cert dans le bundle temporaire ({{ _svc.name }})"
+      # remote_src=ca_tls_remote : false => PEM lu sur le seed ; true => sur le nœud.
+      ansible.builtin.copy:
+        src: "{{ custom_ca_cert }}"
+        dest: "{{ _pf_tmp_ca.path }}/custom.crt"
+        remote_src: "{{ ca_tls_remote | default(false) | bool }}"
+        mode: "0600"
+      changed_when: false
+
+    - name: "Lire le PEM custom_ca_cert ({{ _svc.name }})"
+      ansible.builtin.slurp:
+        src: "{{ _pf_tmp_ca.path }}/custom.crt"
+      register: _pf_custom_ca
+      no_log: true
+
+    - name: "Concaténer custom_ca_cert au bundle temporaire ({{ _svc.name }})"
+      ansible.builtin.blockinfile:
+        path: "{{ _pf_tmp_ca.path }}/ca-bundle.crt"
+        block: "{{ _pf_custom_ca.content | b64decode }}"
+        insertafter: EOF
+        marker: "# {mark} PREFLIGHT PG CA {{ _svc.name }}"
+      changed_when: false
+
+    - name: "Ping TLS de la base externe ({{ _svc.name }})"
+      # Résultat obtenu UNIQUEMENT à l'exécution sur le nœud (base non joignable
+      # en dev hors infra). failed_when: false + assert dédié => message par service.
+      community.postgresql.postgresql_ping:
+        login_host: "{{ lookup('vars', _svc.name ~ '_pg_host') }}"
+        login_port: "{{ lookup('vars', _svc.name ~ '_pg_port') | default(5432) }}"
+        login_user: "{{ lookup('vars', _svc.name ~ '_pg_username') }}"
+        login_password: "{{ lookup('vars', _svc.name ~ '_pg_password') }}"
+        login_db: "{{ lookup('vars', _svc.name ~ '_pg_database') }}"
+        ca_cert: "{{ _pf_tmp_ca.path }}/ca-bundle.crt"
+        ssl_mode: "{{ lookup('vars', _svc.name ~ '_pg_sslmode') }}"
+      register: _pf_pg_ping
+      failed_when: false
+      no_log: true
+
+    - name: "Vérifier le résultat du ping TLS ({{ _svc.name }})"
+      ansible.builtin.assert:
+        that:
+          - _pf_pg_ping.is_available | default(false)
+          - (_pf_pg_ping.conn_err_msg | default('')) | length == 0
+        fail_msg: >-
+          [{{ _svc.name }}] Connexion PostgreSQL TLS échouée vers
+          {{ lookup('vars', _svc.name ~ '_pg_host') | default('<host non défini>') }}:{{ lookup('vars', _svc.name ~ '_pg_port') | default(5432) }}
+          (db={{ lookup('vars', _svc.name ~ '_pg_database') }},
+          sslmode={{ lookup('vars', _svc.name ~ '_pg_sslmode') }}).
+          Vérifier host/port/credentials (DBA), custom_ca_cert et le certificat serveur.
+        success_msg: >-
+          [{{ _svc.name }}] Connexion PostgreSQL TLS OK
+          (sslmode={{ lookup('vars', _svc.name ~ '_pg_sslmode') }}).
+        quiet: true
+  always:
+    - name: "Supprimer le bundle CA temporaire ({{ _svc.name }})"
+      ansible.builtin.file:
+        path: "{{ _pf_tmp_ca.path }}"
+        state: absent
+      when: _pf_tmp_ca.path is defined
+      changed_when: false

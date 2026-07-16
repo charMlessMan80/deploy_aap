@@ -1,0 +1,118 @@
+---
+# roles/preflight/tasks/storage.yml — Brique 8 : stockage (ASSERTS sur ansible_mounts).
+#
+# VERROU DE SÉCURITÉ ABSOLU : cette brique NE partitionne pas, NE formate pas, NE monte
+# pas, NE crée aucun volume. EXCLUSIVEMENT des asserts LECTURE SEULE sur le fait
+# ansible_mounts (gather_facts). Aucun parted/filesystem/lvol/lvg/mkfs/mount.
+#
+# PÉRIMÈTRE (résolu, sourcé) : l'installeur ne fait AUCUN contrôle d'espace/mount =>
+# tout le contrôle nous revient. Le SEUL assert dur SANS chiffre = « graphroot Podman
+# pas sur NFS » (graphroot = {{ aap_user_home }}/aap/containers/storage, sourcé :
+# roles/common/templates/storage.conf.j2, rootless_storage_path). Les seuils d'espace /
+# FS sont PARAMÉTRABLES, défaut NON IMPOSÉ (aucun chiffre officiel n'a pu être sourcé —
+# doc RH « system requirements » non extractible, PDF 404). IOPS / layout LVM / taille
+# disque = provisioning, NON assertables => documentés, pas testés ici.
+#
+# Recherche du bon montage : plus long préfixe parmi ansible_mounts (le chemin n'est PAS
+# forcément un point de montage — souvent porté par /home ou /). Tri croissant + écrasement
+# => le dernier match est le plus long préfixe.
+#
+# FRONTIÈRE DEV : les mounts de la machine de dev ≠ ceux de la cible. On démontre le
+# MÉCANISME (assert passe/échoue), pas l'état réel de la cible.
+
+# === Graphroot Podman : montage porteur + NFS (dur) + espace + FS ===
+- name: "Stockage — montage portant le graphroot Podman ({{ preflight_graphroot_path }})"
+  ansible.builtin.set_fact:
+    _pf_graphroot_mount: "{{ item }}"
+  loop: "{{ ansible_mounts | sort(attribute='mount') }}"
+  loop_control:
+    label: "{{ item.mount }}"
+  when: >-
+    preflight_graphroot_path == item.mount
+    or preflight_graphroot_path.startswith(item.mount ~ ('' if item.mount == '/' else '/'))
+  tags:
+    - preflight_storage
+
+- name: "Stockage — un montage doit porter le graphroot"
+  ansible.builtin.assert:
+    that:
+      - _pf_graphroot_mount is defined
+    fail_msg: "Aucun point de montage trouvé pour '{{ preflight_graphroot_path }}' (ansible_mounts)."
+    success_msg: "Graphroot porté par {{ _pf_graphroot_mount.mount }}."
+    quiet: true
+  tags:
+    - preflight_storage
+
+- name: "Stockage — graphroot Podman PAS sur NFS (garde cœur, sourcée)"
+  ansible.builtin.assert:
+    that:
+      - _pf_graphroot_mount.fstype not in ['nfs', 'nfs4']
+    fail_msg: >-
+      Graphroot Podman '{{ preflight_graphroot_path }}' porté par
+      {{ _pf_graphroot_mount.mount }} de type '{{ _pf_graphroot_mount.fstype }}' (NFS).
+      Le graphroot overlay ne peut PAS être sur NFS : le placer sur un stockage LOCAL.
+    success_msg: >-
+      Graphroot sur {{ _pf_graphroot_mount.mount }}
+      ('{{ _pf_graphroot_mount.fstype }}') — pas NFS.
+    quiet: true
+  when: preflight_graphroot_forbid_nfs | bool
+  tags:
+    - preflight_storage
+
+- name: "Stockage — espace libre suffisant pour le graphroot ($HOME/aap)"
+  ansible.builtin.assert:
+    that:
+      - (_pf_graphroot_mount.size_available | int) >= (preflight_aap_min_free_gb | int) * (1024**3)
+    fail_msg: >-
+      Espace insuffisant sur {{ _pf_graphroot_mount.mount }} :
+      {{ (_pf_graphroot_mount.size_available | int / (1024**3)) | round(1) }} Gio dispo,
+      {{ preflight_aap_min_free_gb }} Gio requis (preflight_aap_min_free_gb).
+    success_msg: >-
+      {{ (_pf_graphroot_mount.size_available | int / (1024**3)) | round(1) }} Gio libres
+      sur {{ _pf_graphroot_mount.mount }}.
+    quiet: true
+  when: (preflight_aap_min_free_gb | int) > 0
+  tags:
+    - preflight_storage
+
+- name: "Stockage — type de FS attendu pour le graphroot"
+  ansible.builtin.assert:
+    that:
+      - _pf_graphroot_mount.fstype == preflight_storage_required_fstype
+    fail_msg: >-
+      Graphroot sur FS '{{ _pf_graphroot_mount.fstype }}' ;
+      attendu '{{ preflight_storage_required_fstype }}' (preflight_storage_required_fstype).
+    success_msg: "Graphroot FS '{{ _pf_graphroot_mount.fstype }}' conforme."
+    quiet: true
+  when: (preflight_storage_required_fstype | default('')) | length > 0
+  tags:
+    - preflight_storage
+
+# === Répertoire d'extraction du bundle (TMPDIR) : montage porteur + espace ===
+- name: "Stockage — montage portant le TMPDIR d'extraction du bundle ({{ preflight_bundle_tmp_path }})"
+  ansible.builtin.set_fact:
+    _pf_tmp_mount: "{{ item }}"
+  loop: "{{ ansible_mounts | sort(attribute='mount') }}"
+  loop_control:
+    label: "{{ item.mount }}"
+  when: >-
+    preflight_bundle_tmp_path == item.mount
+    or preflight_bundle_tmp_path.startswith(item.mount ~ ('' if item.mount == '/' else '/'))
+  tags:
+    - preflight_storage
+
+- name: "Stockage — espace libre suffisant pour l'extraction du bundle (TMPDIR)"
+  ansible.builtin.assert:
+    that:
+      - _pf_tmp_mount is defined
+      - (_pf_tmp_mount.size_available | int) >= (preflight_bundle_tmp_min_free_gb | int) * (1024**3)
+    fail_msg: >-
+      Espace insuffisant sur {{ _pf_tmp_mount.mount | default('?') }} pour
+      {{ preflight_bundle_tmp_path }} :
+      {{ (_pf_tmp_mount.size_available | int / (1024**3)) | round(1) }} Gio dispo,
+      {{ preflight_bundle_tmp_min_free_gb }} Gio requis (preflight_bundle_tmp_min_free_gb).
+    success_msg: "TMPDIR : espace suffisant pour l'extraction du bundle."
+    quiet: true
+  when: (preflight_bundle_tmp_min_free_gb | int) > 0
+  tags:
+    - preflight_storage

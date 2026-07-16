@@ -1,0 +1,80 @@
+---
+# roles/preflight/defaults/main.yml — Valeurs par défaut du rôle preflight.
+#
+# CLAUDE.md 5.6 : aucun secret ici. Les défauts sont surchargeables par
+# group_vars/host_vars des inventaires prod/qual.
+
+# Brique 1a — source OPTIONNELLE du PEM de CA à déposer à l'emplacement custom_ca_cert.
+# Laissée non définie par défaut : si absente, le rôle se contente de VÉRIFIER la
+# présence du fichier (il ne dépose rien). Définir pour activer le dépôt.
+# À VÉRIFIER : source réelle du PEM (PKI d'entreprise non émise).
+# preflight_ca_cert_src: /chemin/source/enterprise-ca.crt
+
+# Brique 2 — enregistrement Satellite. Ces variables sont fournies par l'INVENTAIRE
+# (group_vars), pas par le rôle (valeurs infra). Documentées ici pour mémoire ;
+# NON définies en dur (chemins/IDs réels # À VÉRIFIER côté infra) :
+#   satellite_server_hostname   # FQDN du Satellite            (# À VÉRIFIER)
+#   satellite_org_id            # organisation Satellite       (# À VÉRIFIER)
+#   satellite_activation_key    # AK (n'existe pas encore)     (# À VÉRIFIER)
+#   satellite_ca_cert           # défaut /etc/rhsm/ca/katello-server-ca.pem
+#   satellite_ca_src            # source de la CA à déposer     (# À VÉRIFIER)
+#   satellite_ca_src_remote     # défaut false (source sur le seed)
+#   satellite_manage_repos      # défaut false (l'AK porte généralement les repos)
+#   satellite_repos             # IDs de repos si manage_repos  (# À VÉRIFIER)
+#   satellite_force_register    # défaut false (idempotence)
+
+# Brique 3 — paquets prérequis (justifiés, non gonflés) :
+#   - ansible-core     : l'installeur ASSERTE sa version (preflight/core.yml), ne
+#                        l'installe PAS => requis pré-installé.
+#   - podman           : cible containerized rootless (l'installeur l'installe aussi
+#                        sur non-ostree ; on l'assure présent en amont).
+#   - python3-psycopg2 : requis par la brique 1b (ping PG) AVANT l'installeur.
+# À VÉRIFIER : paquets additionnels selon la cible RHEL 9.6+/10 (les 3 noms ci-dessus
+#   sont stables entre RHEL 9 et 10).
+preflight_packages:
+  - ansible-core
+  - podman
+  - python3-psycopg2
+
+# Brique 4 — chrony (chemins/service ; surchargeable selon la cible RHEL).
+preflight_chronyd_bin: /usr/sbin/chronyd
+preflight_chrony_conf: /etc/chrony.conf
+preflight_chrony_service: chronyd
+
+# Brique 5 — SELinux (assert d'état, lecture seule).
+# Mode SELinux exigé : VIDE par défaut = on n'impose pas un mode précis (la doc AAP
+# 2.6 containerized consultée ne fonde pas 'enforcing' ; l'installeur ne fait aucun
+# precheck). L'assert obligatoire reste « SELinux activé ». Passer cette variable à
+# 'enforcing' (en group_vars/host_vars) pour l'imposer si l'organisation l'exige.
+# À VÉRIFIER : AAP 2.6 containerized exige-t-il 'enforcing' ? (doc / support RH).
+preflight_selinux_required_mode: ""
+
+# Brique 7 — firewalld (assert d'état, lecture seule).
+# État firewalld exigé : VIDE par défaut = non imposé (l'installeur gère les deux
+# cas et n'exige pas firewalld enabled). Même nature que preflight_selinux_required_mode
+# (politique d'assert du RÔLE preflight — consommateur unique => role default préfixé,
+# §5.7 ; surchargeable en group_vars/host_vars). Passer à 'enabled' pour garantir que
+# l'installeur ouvrira bien les ports composants.
+preflight_firewalld_required_state: ""
+
+# Brique 8 — stockage (asserts sur ansible_mounts ; AUCUNE opération de disque).
+# Chemins sondés (techniques du rôle) :
+preflight_graphroot_path: "{{ aap_user_home }}/aap/containers/storage"  # sourcé storage.conf.j2
+preflight_bundle_tmp_path: /tmp        # images_tmp_dir défaut = TMPDIR (README L53) ; À VÉRIFIER
+# Garde cœur sourcée (overlay pas sur NFS) — toujours active :
+preflight_graphroot_forbid_nfs: true
+# Seuils PARAMÉTRABLES, défaut NON IMPOSÉ (aucun chiffre officiel sourçable ; À VÉRIFIER
+# doc RH). 0 = skip. Surchargeables par env ET par groupe (ex. hub >> autres, §5.7).
+preflight_aap_min_free_gb: 0           # $HOME/aap ; À VÉRIFIER
+preflight_bundle_tmp_min_free_gb: 0    # TMPDIR extraction bundle ; À VÉRIFIER
+preflight_storage_required_fstype: ""  # ex 'xfs' ; À VÉRIFIER strict vs reco
+
+# Brique 6 — prérequis NFS du hub (test d'atteignabilité ; PAS de montage).
+preflight_nfs_port: 2049
+preflight_nfs_probe_timeout: 10
+
+# Brique 3 — utilisateur applicatif Podman rootless.
+# aap_user / aap_group / aap_user_home / aap_user_shell sont définis en group_vars/all
+# (projet-wide, même valeur prod et qual) et NON ici : ce sont des faits d'inventaire
+# consommés par plusieurs briques et par le contexte de l'installeur, pas des défauts
+# propres au rôle. (Aussi : var-naming exige un préfixe de rôle pour les vars du rôle.)

@@ -1,0 +1,15 @@
+{{ ansible_managed | comment }}
+# Configuration chrony gérée par aap-automation (rôle preflight).
+# Serveurs NTP : voir la variable `ntp_servers` en group_vars (infra/projet).
+{% for server in ntp_servers %}
+server {{ server }} iburst
+{% endfor %}
+
+# Enregistrer la dérive pour accélérer les synchronisations ultérieures.
+driftfile /var/lib/chrony/drift
+
+# Corriger d'un coup un écart initial important (utile au boot / VM clonée).
+makestep 1.0 3
+
+# Synchroniser l'horloge matérielle (RTC) au temps système.
+rtcsync

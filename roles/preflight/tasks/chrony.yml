@@ -1,0 +1,86 @@
+---
+# roles/preflight/tasks/chrony.yml — Brique 4 : synchronisation horaire (chrony).
+#
+# ORDRE (décidé, justifié) : cette brique s'exécute AVANT le register Satellite
+# (brique 2) et le ping PG (brique 1). Ces étapes font du TLS (verify-full, CA
+# Satellite, confiance inter-composants) et ÉCHOUENT si l'horloge dérive
+# ('certificate is not yet valid' / 'expired' sans rapport avec le certificat).
+#
+# TENSION D'ORDRE RÉSOLUE : chrony est un paquet, mais on ne peut PAS l'installer
+# avant le register (hôte non enregistré => aucun repo actif). chrony DOIT donc être
+# présent dans l'image RHEL. Il l'est dans l'install RHEL standard, mais PAS garanti
+# sur un profil « minimal » (# À VÉRIFIER selon l'image cible). D'où une GARDE de
+# présence : si chronyd est absent, échec clair (le fournir via l'image / le
+# provisioning seed) plutôt qu'un install impossible pré-register.
+# Source du prérequis « horloge synchronisée avant register » : Satellite 6.19 §6.2.2.
+#
+# FRONTIÈRE DEV : config chrony + synchro effective = seed uniquement. En dev :
+# --syntax-check / ansible-lint. Rien n'est simulé.
+
+- name: Vérifier que chronyd est présent (prérequis image, avant le register)
+  ansible.builtin.stat:
+    path: "{{ preflight_chronyd_bin }}"
+  register: _pf_chronyd_stat
+  tags:
+    - preflight_chrony_guard
+
+- name: Échouer si chronyd est absent (non installable avant le register)
+  ansible.builtin.assert:
+    that:
+      - _pf_chronyd_stat.stat.exists
+    fail_msg: >-
+      chronyd absent ('{{ preflight_chronyd_bin }}') sur {{ inventory_hostname }}.
+      Sur un hôte non enregistré aucun repo n'est actif : chrony ne peut être installé
+      ici. Il doit être présent dans l'image RHEL (ou déposé au provisioning) pour
+      synchroniser l'horloge AVANT le register Satellite (TLS).
+    success_msg: "chronyd présent : '{{ preflight_chronyd_bin }}'."
+    quiet: true
+  tags:
+    - preflight_chrony_guard
+
+- name: Exiger des serveurs NTP définis (pas de source horaire = synchro impossible)
+  ansible.builtin.assert:
+    that:
+      - ntp_servers is defined
+      - ntp_servers | length > 0
+    fail_msg: >-
+      Aucun serveur NTP défini (ntp_servers). Définir les serveurs NTP internes
+      (souvent AD/DC ou NTP d'entreprise) en group_vars — ne pas dépendre d'un pool public.
+    success_msg: "Serveurs NTP définis : {{ ntp_servers }}."
+    quiet: true
+
+- name: Déposer la configuration chrony (serveurs NTP)
+  # REMPLACE {{ preflight_chrony_conf }}. # À VÉRIFIER : aligner les directives sur la
+  # baseline de l'organisation si elle impose une configuration chrony standard.
+  ansible.builtin.template:
+    src: chrony.conf.j2
+    dest: "{{ preflight_chrony_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart chronyd
+
+- name: Activer et démarrer chronyd
+  ansible.builtin.service:
+    name: "{{ preflight_chrony_service }}"
+    enabled: true
+    state: started
+  become: true
+
+- name: Appliquer les handlers en attente (restart chronyd si la conf a changé)
+  # Force le restart AVANT la vérification, sinon on lirait l'état de l'ancienne conf.
+  ansible.builtin.meta: flush_handlers
+
+- name: Vérifier que la synchronisation horaire est effective (lecture seule)
+  # Pas de module pour lire l'état de synchro chrony -> command LECTURE SEULE,
+  # non-changing. Exécuté sur le seed uniquement. retries : laisse la synchro s'établir.
+  ansible.builtin.command:
+    cmd: chronyc -n tracking
+  register: _pf_chrony_tracking
+  changed_when: false
+  retries: 5
+  delay: 6
+  until:
+    - _pf_chrony_tracking.rc == 0
+    - "'Not synchronised' not in _pf_chrony_tracking.stdout"

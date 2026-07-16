@@ -1,0 +1,146 @@
+---
+# inventories/qual/group_vars/all/main.yml — Variables NON-SECRÈTES, QUALIFICATION.
+#
+# CLAUDE.md 5.4 : ce group_vars vit À CÔTÉ de l'inventaire qual. JAMAIS mutualisé
+# avec prod. CLAUDE.md 5.6 : aucun secret ici (mots de passe en vault.yml).
+#
+# Noms de variables = ceux résolus contre le bundle (README + `inventory`
+# enterprise). C'est le SEUL environnement autorisé à porter des variables de
+# banc de test (section dédiée en bas). Prod ne doit JAMAIS les porter.
+
+# Marqueur d'environnement (sert au verrouillage prod/qual, cf. CLAUDE.md 5.2).
+aap_environment: qual
+
+# ===========================================================================
+# Utilisateur applicatif Podman rootless (projet-wide ; consommé par le preflight
+# et le contexte de l'installeur). Même valeur qu'en prod, mais déclaré séparément
+# dans chaque inventaire (CLAUDE.md 5.1 : aucun fichier partagé prod/qual).
+# ===========================================================================
+aap_user: aap
+aap_group: aap
+aap_user_home: /home/aap
+aap_user_shell: /bin/bash
+
+# ===========================================================================
+# Serveurs NTP (infra/projet). En environnement Satellite, l'horloge vient souvent
+# de l'AD/DC ou d'un NTP interne — NE PAS coder un pool public en dur.
+# ===========================================================================
+# À VÉRIFIER : serveurs NTP réels de l'environnement de QUALIFICATION.
+ntp_servers: []
+# ex. ntp_servers:
+#   - ntp1.qual.example.com
+#   - ntp2.qual.example.com
+
+# ===========================================================================
+# Partage NFS du contenu du hub (hub HA). L'INSTALLEUR monte lui-même le partage
+# (ansible.posix.mount) ET installe nfs-utils : ici on ne fait que fournir les
+# variables + prérequis (cohérence, atteignabilité). Ne PAS monter côté preflight.
+# ===========================================================================
+# À VÉRIFIER : export NFS réel du hub (format 'serveur:/export').
+# hub_shared_data_path: "nfshub.qual.example.com:/export/aap-hub"
+hub_shared_data_mount_opts: "rw,sync,hard"
+# À VÉRIFIER : sous SELinux enforcing, le partage NFS peut exiger un label via
+#   context= (le relabel :z/:Z ne marche pas sur NFS ; l'installeur n'ajoute PAS de
+#   context=, et la doc/README ne le documente pas). Déterminer le mécanisme réel
+#   (context=system_u:object_r:<type>:s0 OU un booléen) selon l'état SELinux et la
+#   conf NFS — NE PAS poser une valeur non vérifiée (casse sur le vrai NFS).
+#   ex. hub_shared_data_mount_opts: "rw,sync,hard,context=system_u:object_r:container_file_t:s0"
+
+# ===========================================================================
+# Installation par bundle (images servies par le bundle)
+# ===========================================================================
+bundle_install: true
+# À VÉRIFIER : emplacement du bundle extrait sur le nœud seed (chemin absolu
+#   finissant par /bundle). Dépend du seed, non figé.
+# bundle_dir: /opt/aap/seed/bundle
+
+# ===========================================================================
+# Registry (OPTIONNEL quand bundle_install=true)
+# ===========================================================================
+# À VÉRIFIER : FQDN du registry Satellite si pull registry (sinon bundle).
+# registry_url: registry.satellite.qual.example.com
+# registry_username: <compte registry Satellite>   # À VÉRIFIER : compte de service
+# registry_tls_verify: true
+
+# ===========================================================================
+# PostgreSQL externe (géré par les DBA) — TLS verify-full EXIGÉ (CLAUDE.md 3)
+# ===========================================================================
+postgresql_disable_tls: false
+# À VÉRIFIER : nom du compte admin PostgreSQL fourni par les DBA (qual).
+# postgresql_admin_username: <admin DBA qual>
+
+# --- Gateway DB (base par défaut : gateway) ---
+# À VÉRIFIER : host/port PostgreSQL réels (DBA, qual).
+# gateway_pg_host: db-gateway.qual.example.com
+gateway_pg_port: 5432
+gateway_pg_database: gateway
+gateway_pg_username: gateway
+gateway_pg_sslmode: verify-full        # explicite (défaut bundle : prefer)
+
+# --- Controller DB (base par défaut : awx) ---
+# controller_pg_host: db-controller.qual.example.com   # À VÉRIFIER (DBA)
+controller_pg_port: 5432
+controller_pg_database: awx
+controller_pg_username: awx
+controller_pg_sslmode: verify-full     # explicite (défaut bundle : prefer)
+
+# --- Hub DB (base par défaut : pulp) ---
+# hub_pg_host: db-hub.qual.example.com                 # À VÉRIFIER (DBA)
+hub_pg_port: 5432
+hub_pg_database: pulp
+hub_pg_username: pulp
+hub_pg_sslmode: verify-full            # explicite (défaut bundle : prefer)
+
+# --- EDA DB (base par défaut : eda) ---
+# eda_pg_host: db-eda.qual.example.com                 # À VÉRIFIER (DBA)
+eda_pg_port: 5432
+eda_pg_database: eda
+eda_pg_username: eda
+eda_pg_sslmode: verify-full            # explicite (défaut bundle : prefer)
+
+# À VÉRIFIER : source de la CA racine validant le certificat SERVEUR PostgreSQL
+#   en verify-full (aucune variable *_pg_sslrootcert / pg_ca dans le README du
+#   bundle). Confirmer contre la doc AAP 2.6 avant le play d'install.
+
+# ===========================================================================
+# Gateway front-end — point d'entrée unique (VIP / load balancer)
+# ===========================================================================
+# À VÉRIFIER : URL publique du gateway derrière la VIP/LB (qual).
+# gateway_main_url: https://aap.qual.example.com
+
+# ===========================================================================
+# Redis — cluster (CLAUDE.md 3)
+# ===========================================================================
+redis_mode: cluster                    # explicite (défaut bundle : cluster)
+
+# ===========================================================================
+# Certificats — PKI d'entreprise (jamais la CA auto-signée de l'installeur)
+# ===========================================================================
+# CA validant le certificat du serveur PostgreSQL externe en verify-full (voir
+# prod pour le mécanisme confirmé). qual utilise aussi verify-full => couplage actif.
+# À VÉRIFIER : chemin réel + émission de la CA (PKI non émise) et ca_tls_remote.
+custom_ca_cert: /etc/pki/aap/enterprise-ca.crt
+# ca_tls_remote: false
+# ca_tls_cert: /etc/pki/aap/enterprise-ca.crt
+# ca_tls_key: /etc/pki/aap/enterprise-ca.key
+
+# Certificats de service : SAN couvrant tous les FQDN + VIP gateway (CLAUDE.md 3).
+# À VÉRIFIER : SAN exacts + chemins par service (certs non émis).
+# gateway_tls_cert: /etc/pki/aap/gateway.crt
+# gateway_tls_key: /etc/pki/aap/gateway.key
+# controller_tls_cert: /etc/pki/aap/controller.crt
+# controller_tls_key: /etc/pki/aap/controller.key
+# hub_tls_cert: /etc/pki/aap/hub.crt
+# hub_tls_key: /etc/pki/aap/hub.key
+# eda_tls_cert: /etc/pki/aap/eda.crt
+# eda_tls_key: /etc/pki/aap/eda.key
+
+# ===========================================================================
+# BANC DE TEST — QUAL UNIQUEMENT (CLAUDE.md 5.2)
+# ===========================================================================
+# Ces variables N'EXISTENT QUE côté qual. En prod, leur ABSENCE sera vérifiée par
+# l'assert de verrouillage (livrable du play d'install). NE JAMAIS les copier en prod.
+test_harness_enabled: true
+# Endpoints / credentials factices du banc — le banc réel n'est pas encore défini.
+# À VÉRIFIER : valeurs réelles du banc de test qual (endpoints/mocks/credentials).
+# test_harness_fake_pg_host: pg-fake.qual.example.com

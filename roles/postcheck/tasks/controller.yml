@@ -1,0 +1,24 @@
+---
+# roles/postcheck/tasks/controller.yml — Post-checks du controller (gaté automationcontroller).
+# LECTURE SEULE. S'exécute sur le seed après install (non simulable en dev).
+
+- name: Postcheck controller — statut des conteneurs systemd
+  ansible.builtin.include_tasks: systemd_status.yml
+  vars:
+    postcheck_component: controller
+    postcheck_services: "{{ postcheck_controller_services }}"
+
+# SOURCÉ : automationcontroller/tasks/license.yml (uri /api/v2/ping/, status 200).
+# Vérifié EN DIRECT sur le nœud controller, en TLS (trust d'entreprise).
+- name: Postcheck controller — endpoint de santé (/api/v2/ping/)
+  ansible.builtin.uri:
+    url: "{{ postcheck_controller_health_url }}"
+    validate_certs: "{{ postcheck_validate_certs }}"
+    ca_path: "{{ postcheck_ca_path | default(omit, true) }}"
+    timeout: "{{ postcheck_http_timeout }}"
+    status_code: 200
+  register: _postcheck_controller_http
+  until: _postcheck_controller_http.status == 200
+  retries: "{{ postcheck_http_retries }}"
+  delay: "{{ postcheck_http_delay }}"
+  changed_when: false

@@ -1,0 +1,12 @@
+---
+# roles/postcheck/tasks/execution.yml — Post-checks des execution / hop nodes
+# (gaté execution_nodes). LECTURE SEULE. S'exécute sur le seed après install.
+#
+# Pas d'endpoint HTTP de santé exposé sur ces nœuds : le seul point de contrôle
+# légitime est l'état du conteneur receptor (SOURCÉ : receptor/tasks/systemd.yml).
+
+- name: Postcheck execution/hop — statut du conteneur receptor (systemd)
+  ansible.builtin.include_tasks: systemd_status.yml
+  vars:
+    postcheck_component: "execution/hop"
+    postcheck_services: "{{ postcheck_execution_services }}"
