@@ -607,12 +607,37 @@ NB (2026-07-16) : l'épinglage des collections (community.postgresql==3.14.3, co
      RHEL 9.6+ (ou RHEL 10, avec ansible-core 2.16). C'est un ASSERT RÉEL de l'installeur (pas une
      doc externe) : plus fiable qu'une page web. Checklist .docx (section 4, les 2 variantes)
      corrigée en conséquence, avec note interne (commentaire Word) citant fichier:ligne.
-- Reliquat noté en passant (PAS touché dans la checklist, hors périmètre de ce livrable) :
-  nodes.yml:16-19 contient aussi un assert RAM réel : `ansible_memtotal_mb >= 15000`, fail_msg
-  "Required RAM is 16GB..." => la valeur RAM 16 Go EST en fait sourçable dans le bundle (contrairement
-  à vCPU/IOPS, pour lesquels aucun assert n'existe : `ansible_processor_vcpus | default(4)` n'est
-  qu'un défaut de calcul de workers, PAS une exigence minimale ; IOPS n'apparaît nulle part dans les
-  rôles). À reprendre dans un livrable dédié si on veut sourcer RAM avec le même luxe que RHEL/disque.
+- Reliquat noté en passant (PAS touché dans CE livrable RHEL, résolu au livrable SUIVANT — voir
+  section « RAM — 16 Go requalifiée en exigence sourcée » ci-dessous) : nodes.yml contient aussi un
+  assert RAM réel. La valeur RAM 16 Go EST en fait sourçable dans le bundle (contrairement à vCPU/IOPS,
+  pour lesquels aucun assert n'existe : `ansible_processor_vcpus | default(4)` n'est qu'un défaut de
+  calcul de workers, PAS une exigence minimale ; IOPS n'apparaît nulle part dans les rôles).
+
+## RAM — 16 Go requalifiée en exigence sourcée (RÉSOLU 2026-07-16, assert bundle)
+Source EXACTE (collection ansible.containerized_installer, bundle 2.6-10.1-x86_64) :
+- roles/preflight/tasks/nodes.yml:15-22 — assert installeur RÉEL "Fail if this machine lacks
+  sufficient RAM" : condition `ansible_memtotal_mb >= 15000` (ligne 18), fail_msg "Required RAM is
+  16GB but this machine only has {{ ansible_memtotal_mb }}MB." (lignes 19-21).
+- Nuance : `when: (receptor_type | default('')) != 'hop' or group_names != ['execution_nodes']`
+  (ligne 22) => ce garde est SKIPPÉ pour un nœud UNIQUEMENT hop (receptor_type=hop ET membre du
+  SEUL groupe execution_nodes). En topologie enterprise standard (1 hop + 2 exec), hop1 correspond
+  à ce cas => hop1 n'est PAS soumis au minimum RAM par l'installeur (les exec1/exec2 et tous les
+  autres rôles le sont). Nuance tracée ici, PAS remontée dans le texte visible de la checklist
+  (item générique "tous les nœuds") pour ne pas alourdir un document business ; portée par le
+  commentaire Word interne à la place.
+=> DÉCISION : 16 Go RAM passe de "ordre de grandeur à confirmer" à EXIGENCE sourcée (même
+  niveau que disque 60/15/10 et RHEL 9.6+/10) dans les 2 .docx (section 4), avec commentaire Word
+  interne citant fichier:ligne. vCPU et IOPS INCHANGÉS : aucun assert bundle correspondant =>
+  restent "ordre de grandeur à confirmer côté Red Hat".
+RÉCAP FINAL dimensionnement section 4 (3 sourcés / 2 à confirmer) :
+  | Item                    | Statut    | Source précise                                              |
+  |-------------------------|-----------|--------------------------------------------------------------|
+  | 60 Go disque total      | SOURCÉ    | doc RH "Local disk" table (2 URL, § STOCKAGE — SEUILS SOURCÉS)|
+  | ≥15 Go install / ≥10 Go /tmp | SOURCÉ | idem + preflight/defaults/main.yml (assert projet)         |
+  | RHEL 9.6+ (ou RHEL 10)  | SOURCÉ    | nodes.yml:12-13 (assert installeur) + core.yml:7             |
+  | 16 Go RAM               | SOURCÉ    | nodes.yml:15-22 (assert installeur, nuance hop ci-dessus)    |
+  | ~4 vCPU                 | À CONFIRMER | aucun assert ; default(4) = calcul workers, pas un seuil   |
+  | ~3000 IOPS              | À CONFIRMER | aucun assert, absent des rôles                             |
 
 ## RHEL — version requise : PAS DE VALEUR SOURCÉE (correctif checklist, 2026-07-16, PREMIÈRE tentative — voir suite ci-dessus)
 - La checklist .docx (docs/AAP_2.6_prerequis_infra_par_equipe.docx, section 4) affirmait
