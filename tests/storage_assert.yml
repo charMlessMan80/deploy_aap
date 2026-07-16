@@ -1,0 +1,32 @@
+---
+# Harnais reproductible — prouve que l'assert d'espace MORD avec les défauts sourcés (15/10 Gio).
+# Simule ansible_mounts ; ne touche à aucun disque. sim_home = Gio simulés sur /home.
+# Cas bas   : ansible-playbook tests/storage_assert.yml -e sim_home=5   (échec attendu, < 15)
+# Cas normal: ansible-playbook tests/storage_assert.yml -e sim_home=20  (succès)
+- name: "Démo assert stockage"
+  hosts: localhost
+  gather_facts: false
+  vars:
+    aap_user_home: /home/aap
+    preflight_graphroot_path: "{{ aap_user_home }}/aap/containers/storage"
+    preflight_bundle_tmp_path: /tmp
+    preflight_graphroot_forbid_nfs: true
+    preflight_aap_min_free_gb: 15
+    preflight_bundle_tmp_min_free_gb: 10
+    preflight_storage_required_fstype: ""
+    gio_home: "{{ sim_home | default(5) | int }}"
+  tasks:
+    - name: "Simuler ansible_mounts (/, /home, /tmp)"
+      ansible.builtin.set_fact:
+        ansible_mounts:
+          - mount: /
+            fstype: xfs
+            size_available: "{{ 40 * (1024**3) }}"
+          - mount: /home
+            fstype: xfs
+            size_available: "{{ (gio_home | int) * (1024**3) }}"
+          - mount: /tmp
+            fstype: xfs
+            size_available: "{{ 20 * (1024**3) }}"
+    - name: "Inclure la brique stockage réelle du rôle"
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../roles/preflight/tasks/storage.yml"
